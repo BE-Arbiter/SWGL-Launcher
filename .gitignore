@@ -1,0 +1,24 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Rider / VS Code
+.idea/
+.vscode/
+
+## Local launcher state
+installed.json
+*.part
+
+## OS
+Thumbs.db
+desktop.ini

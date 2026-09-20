@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SWGLLauncher/SWGLLauncher.csproj" />
+  <Project Path="Tools/SWGLManifest/SWGLManifest.csproj" />
+</Solution>

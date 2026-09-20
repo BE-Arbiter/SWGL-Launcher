@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>SWGLManifest</AssemblyName>
+    <RootNamespace>SWGLLauncher.ManifestTool</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Modeles partages avec le launcher : une seule definition du format -->
+    <Compile Include="..\..\SWGLLauncher\Manifest.cs" Link="Shared\Manifest.cs" />
+    <Compile Include="..\..\SWGLLauncher\InstalledState.cs" Link="Shared\InstalledState.cs" />
+    <Compile Include="..\..\SWGLLauncher\ManifestService.cs" Link="Shared\ManifestService.cs" />
+  </ItemGroup>
+
+</Project>
