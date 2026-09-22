@@ -57,6 +57,15 @@ namespace SWGLLauncher
         /// </summary>
         public IReadOnlyCollection<string> KeepPatterns { get; init; } = [];
 
+        /// <summary>Journal des operations effectuees (suppressions, telechargements...).</summary>
+        public Action<string>? Log { get; init; }
+
+        /// <summary>
+        /// Nombre de nouvelles tentatives pour un telechargement interrompu par le reseau.
+        /// Chacune se reconnecte et reprend la ou le fichier partiel s'est arrete.
+        /// </summary>
+        public int DownloadRetries { get; init; } = 3;
+
         /// <summary>
         /// Determine ce qui doit etre telecharge et supprime.
         /// </summary>
@@ -181,6 +190,14 @@ namespace SWGLLauncher
                     continue;
                 }
 
+                // Telechargement interrompu d'un fichier toujours au manifeste : il sera
+                // repris, surtout pas efface — sinon la reprise repartirait de zero.
+                if (relative.EndsWith(PartialSuffix, StringComparison.OrdinalIgnoreCase)
+                    && manifestPaths.Contains(relative[..^PartialSuffix.Length]))
+                {
+                    continue;
+                }
+
                 yield return relative;
             }
         }
@@ -269,7 +286,11 @@ namespace SWGLLauncher
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 progress?.Report(new SyncProgress("Removing", path));
-                DeleteLocalFile(path);
+
+                if (DeleteLocalFile(path))
+                {
+                    Log?.Invoke($"Removed {path}");
+                }
             }
 
             if (plan.Delete.Count > 0)
@@ -308,8 +329,41 @@ namespace SWGLLauncher
                 progress?.Report(new SyncProgress(header, entry.Path,
                     totalBytes > 0 ? fileStartBytes / (double)totalBytes : -1));
 
-                InstalledEntry result = await DownloadVerifiedAsync(
-                    ftp, entry, localPath, fileProgress, cancellationToken);
+                bool resuming = File.Exists(localPath + PartialSuffix);
+                InstalledEntry result;
+
+                for (int attempt = 1; ; attempt++)
+                {
+                    try
+                    {
+                        result = await DownloadVerifiedAsync(
+                            ftp, entry, localPath, fileProgress, cancellationToken);
+                        break;
+                    }
+                    catch (Exception exception) when (
+                        attempt <= DownloadRetries
+                        && !cancellationToken.IsCancellationRequested
+                        && IsTransient(exception))
+                    {
+                        // Coupure reseau : le fichier partiel est garde, on se reconnecte
+                        // et le telechargement reprend a l'octet ou il s'est arrete.
+                        Log?.Invoke($"Download of {entry.Path} interrupted ({Innermost(exception).Message}), "
+                            + $"retrying {attempt}/{DownloadRetries}");
+
+                        progress?.Report(new SyncProgress(
+                            $"Reconnecting ({attempt}/{DownloadRetries})",
+                            entry.Path,
+                            totalBytes > 0 ? fileStartBytes / (double)totalBytes : -1));
+
+                        await Task.Delay(TimeSpan.FromSeconds(2 * attempt), cancellationToken);
+                        await ftp.ReconnectAsync(cancellationToken);
+                        resuming = true;
+                    }
+                }
+
+                Log?.Invoke(resuming
+                    ? $"Downloaded {entry.Path} ({FormatSize(entry.Size)}, resumed)"
+                    : $"Downloaded {entry.Path} ({FormatSize(entry.Size)})");
 
                 installed.RemoveAll(
                     existing => existing.Path.Equals(entry.Path, StringComparison.OrdinalIgnoreCase));
@@ -330,7 +384,7 @@ namespace SWGLLauncher
         /// Un fichier dont l'empreinte est fausse est retelecharge une fois depuis zero
         /// (cas classique d'une reprise sur un fichier modifie entre-temps sur le serveur).
         /// </summary>
-        private static async Task<InstalledEntry> DownloadVerifiedAsync(
+        private async Task<InstalledEntry> DownloadVerifiedAsync(
             FtpClientService ftp,
             ManifestEntry entry,
             string localPath,
@@ -359,14 +413,59 @@ namespace SWGLLauncher
                 }
 
                 // Reprise probablement incoherente : on repart du debut.
+                Log?.Invoke(attempt == 0
+                    ? $"Checksum mismatch on {entry.Path}, downloading it again from scratch"
+                    : $"Checksum mismatch on {entry.Path} again, giving up");
                 File.Delete(tempPath);
             }
 
-            throw new IOException(
+            // Pas une IOException : ce n'est pas une coupure a retenter, le fichier recu est faux.
+            throw new InvalidDataException(
                 $"{entry.Path} failed its checksum after download.");
         }
 
-        private void DeleteLocalFile(string relativePath)
+        /// <summary>
+        /// Vrai pour une panne reseau passagere (timeout, connexion coupee), qui vaut la peine
+        /// d'etre retentee. Un refus d'authentification ou une annulation ne le sont pas.
+        /// </summary>
+        private static bool IsTransient(Exception exception)
+        {
+            bool transient = false;
+
+            for (Exception? current = exception; current is not null; current = current.InnerException)
+            {
+                switch (current)
+                {
+                    case OperationCanceledException:
+                    case FluentFTP.Exceptions.FtpAuthenticationException:
+                    case InvalidDataException:
+                        return false;
+
+                    case TimeoutException:
+                    case IOException:
+                    case System.Net.Sockets.SocketException:
+                        transient = true;
+                        break;
+                }
+            }
+
+            return transient;
+        }
+
+        private static Exception Innermost(Exception exception)
+        {
+            Exception current = exception;
+
+            while (current.InnerException is not null)
+            {
+                current = current.InnerException;
+            }
+
+            return current;
+        }
+
+        /// <returns>Vrai si la suppression a abouti (ou s'il n'y avait rien a supprimer).</returns>
+        private bool DeleteLocalFile(string relativePath)
         {
             try
             {
@@ -382,12 +481,16 @@ namespace SWGLLauncher
                 {
                     File.Delete(partial);
                 }
+
+                return true;
             }
             catch (Exception exception) when (
                 exception is IOException or UnauthorizedAccessException or InvalidDataException)
             {
                 // Un fichier verrouille ou refuse ne doit pas interrompre la mise a jour :
                 // il sera retente au prochain passage.
+                Log?.Invoke($"Could not remove {relativePath}: {exception.Message}");
+                return false;
             }
         }
 

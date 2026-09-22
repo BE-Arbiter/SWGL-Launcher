@@ -14,8 +14,12 @@ namespace SWGLLauncher
     public partial class LauncherForm : Form
     {
         private const int WM_NCHITTEST = 0x0084;
+        private const int WM_NCLBUTTONDBLCLK = 0x00A3;
         private const int HTCLIENT = 1;
         private const int HTCAPTION = 2;
+
+        /// <summary>Au-dela, les lignes les plus anciennes du journal sont retirees.</summary>
+        private const int MaxLogLines = 1000;
 
         // Gabarit de la barre basse, en pixels logiques (96 ppp).
         private const int BarHeight = 96;
@@ -50,6 +54,9 @@ namespace SWGLLauncher
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool DeleteObject(IntPtr hObject);
 
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetWindowTheme(IntPtr hWnd, string? appName, string? idList);
+
         private readonly LauncherConfig _config;
         private readonly MusicPlayer _music = new();
 
@@ -77,6 +84,8 @@ namespace SWGLLauncher
 
         private CancellationTokenSource? _syncCancellation;
         private bool _isSyncing;
+
+        private int _logLineCount;
 
         public LauncherForm()
         {
@@ -119,7 +128,7 @@ namespace SWGLLauncher
             Color closeHoverBack = _config.GetColor(
                 "titlebar.close.hover.background", Color.FromArgb(192, 192, 48, 48));
 
-            foreach (TitleBarButton button in new[] { btnMusic, btnMinimize, btnClose })
+            foreach (TitleBarButton button in new[] { btnLog, btnMusic, btnMinimize, btnClose })
             {
                 button.GlyphColor = glyph;
                 button.HoverGlyphColor = glyphHover;
@@ -229,6 +238,10 @@ namespace SWGLLauncher
         {
             base.OnLoad(e);
             ApplyScaledLayout();
+
+            // Barre de defilement sombre, assortie au journal (Windows 10 1809 et suivants ;
+            // sans effet ailleurs).
+            _ = SetWindowTheme(txtLog.Handle, "DarkMode_Explorer", null);
         }
 
         protected override void OnShown(EventArgs e)
@@ -540,6 +553,7 @@ namespace SWGLLauncher
             }
             catch (Exception exception)
             {
+                LogError("Jedi Outcast import", exception);
                 progress.Report(new SyncProgress("Import failed", exception.Message, 0));
             }
             finally
@@ -603,6 +617,7 @@ namespace SWGLLauncher
             {
                 SystemSounds.Hand.Play();
                 SetStatus("Could not update Steam", exception.Message);
+                LogError("Steam shortcut", exception);
             }
         }
 
@@ -644,6 +659,7 @@ namespace SWGLLauncher
                     exception is IOException or UnauthorizedAccessException)
                 {
                     // Un visuel qui ne passe pas ne doit pas invalider le raccourci lui-meme.
+                    Log($"Steam artwork {kind} skipped: {exception.Message}");
                 }
             }
 
@@ -702,6 +718,7 @@ namespace SWGLLauncher
             catch (Exception exception)
             {
                 SetStatus("Could not start the game", exception.Message);
+                LogError("game start", exception);
                 return;
             }
 
@@ -739,15 +756,21 @@ namespace SWGLLauncher
 
             IProgress<SyncProgress> progress = CreateProgress();
 
+            string mode = !applyChanges ? (fullVerify ? "Verify only" : "Check") : "Update";
+            string host = _config.GetString("ftp.host", string.Empty);
+            Log($"{mode} — channel {CurrentChannelLabel}, server {host}:{_config.GetInt("ftp.port", 21)}");
+
             try
             {
                 progress.Report(new SyncProgress("Connecting to the server...", string.Empty));
 
-                await using var ftp = new FtpClientService(_config);
+                await using var ftp = new FtpClientService(_config) { Log = Log };
                 await ftp.ConnectAsync(betaCode, token);
+                Log($"Connected as {ftp.UserName}");
 
                 progress.Report(new SyncProgress("Reading the manifest...", ftp.UserName));
                 Manifest manifest = await ftp.DownloadManifestAsync(token);
+                Log($"Manifest: {DescribeChannel(manifest.Channel, manifest.Version)}, {manifest.Files.Count} file(s)");
 
                 var engine = new SyncEngine(InstallRoot, StatePath)
                 {
@@ -757,9 +780,13 @@ namespace SWGLLauncher
                     KeepPatterns = _config
                         .GetString("sync.keep", DefaultKeepPatterns)
                         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                    DownloadRetries = Math.Max(0, _config.GetInt("sync.download.retries", 3)),
+                    Log = Log,
                 };
 
                 SyncPlan plan = await engine.BuildPlanAsync(manifest, fullVerify, progress, token);
+                Log($"Plan: {plan.Download.Count} to download ({SyncEngine.FormatSize(plan.TotalBytes)}), "
+                    + $"{plan.Delete.Count} to remove, {plan.Keep.Count} up to date");
 
                 if (plan.IsUpToDate)
                 {
@@ -792,6 +819,7 @@ namespace SWGLLauncher
 
                 await engine.ApplyAsync(plan, manifest, ftp, progress, token);
 
+                Log("Update complete");
                 progress.Report(new SyncProgress(
                     "Update complete",
                     DescribeChannel(manifest.Channel, manifest.Version),
@@ -799,15 +827,18 @@ namespace SWGLLauncher
             }
             catch (OperationCanceledException)
             {
+                Log("Cancelled");
                 progress.Report(new SyncProgress("Cancelled", string.Empty, 0));
             }
-            catch (FtpAuthenticationException)
+            catch (FtpAuthenticationException exception)
             {
+                LogError("login refused", exception);
                 progress.Report(new SyncProgress(
                     "Login refused", "Invalid beta code, or the beta is closed", 0));
             }
             catch (Exception exception)
             {
+                LogError(mode.ToLowerInvariant(), exception);
                 progress.Report(new SyncProgress("Failed", exception.Message, 0));
             }
             finally
@@ -906,13 +937,88 @@ namespace SWGLLauncher
             });
         }
 
-        /// <summary>Met a jour les deux lignes de la barre d'etat.</summary>
+        /// <summary>Met a jour les deux lignes de la barre d'etat, et les note au journal.</summary>
         private void SetStatus(string status, string detail)
         {
             _statusText = status;
             _detailText = detail;
             _progressFraction = -1;
             InvalidateStatusArea();
+
+            Log(detail.Length > 0 ? $"{status} — {detail}" : status);
+        }
+
+        // ------------------------------------------------------------------
+        // Journal
+        // ------------------------------------------------------------------
+
+        private void BtnLog_Click(object? sender, EventArgs e) => SetLogVisible(!pnlLog.Visible);
+
+        private void SetLogVisible(bool visible)
+        {
+            pnlLog.Visible = visible;
+            btnLog.Glyph = visible ? TitleBarGlyph.LogHide : TitleBarGlyph.LogShow;
+            btnLog.Invalidate();
+
+            if (visible)
+            {
+                pnlLog.BringToFront();
+                txtLog.SelectionStart = txtLog.TextLength;
+                txtLog.ScrollToCaret();
+            }
+        }
+
+        /// <summary>
+        /// Ajoute une ligne horodatee au journal. Appelable depuis n'importe quel fil :
+        /// FluentFTP journalise depuis ses propres fils.
+        /// </summary>
+        private void Log(string message)
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(() => Log(message));
+                return;
+            }
+
+            string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+            txtLog.AppendText(txtLog.TextLength == 0 ? line : Environment.NewLine + line);
+
+            // Taille bornee : on ne retaille que de temps en temps, relire toutes les
+            // lignes a chaque ajout couterait cher pendant un gros telechargement.
+            if (++_logLineCount > MaxLogLines + 200)
+            {
+                txtLog.Lines = txtLog.Lines[^MaxLogLines..];
+                _logLineCount = MaxLogLines;
+                txtLog.SelectionStart = txtLog.TextLength;
+                txtLog.ScrollToCaret();
+            }
+        }
+
+        /// <summary>
+        /// Journalise une erreur avec ses causes, et ouvre le journal pour qu'elle se voie.
+        /// </summary>
+        private void LogError(string context, Exception exception)
+        {
+            Log($"ERROR {context}: {exception.GetType().Name}: {exception.Message}");
+
+            for (Exception? inner = exception.InnerException; inner is not null; inner = inner.InnerException)
+            {
+                Log($"    caused by {inner.GetType().Name}: {inner.Message}");
+            }
+
+            SetLogVisible(true);
+        }
+
+        /// <summary>Filet d'accent autour du journal.</summary>
+        private void PnlLog_Paint(object? sender, PaintEventArgs e)
+        {
+            using var pen = new Pen(Color.FromArgb(120, _accentColor));
+            e.Graphics.DrawRectangle(pen, 0, 0, pnlLog.Width - 1, pnlLog.Height - 1);
         }
 
         private static string DescribeChannel(string channel, string version)
@@ -979,6 +1085,19 @@ namespace SWGLLauncher
             btnUpdate.Size = new Size(Scaled(170), fieldHeight);
             btnUpdate.Location = new Point(
                 btnStart.Left - gap - btnUpdate.Width, rowY);
+
+            // Journal : bouton en haut a gauche, en miroir des boutons de la barre de titre,
+            // panneau sur la gauche entre la barre de titre et la barre basse.
+            btnLog.Size = new Size(size, size);
+            btnLog.Location = new Point(margin, margin);
+
+            int logTop = btnLog.Bottom + margin;
+            int logBottom = ClientSize.Height - Scaled(BarHeight) - margin;
+
+            // 320 de large : le panneau s'arrete juste avant le logo centre en haut.
+            pnlLog.Location = new Point(padding, logTop);
+            pnlLog.Size = new Size(Scaled(320), Math.Max(Scaled(80), logBottom - logTop));
+            pnlLog.Padding = new Padding(Scaled(10), Scaled(8), Scaled(4), Scaled(8));
 
             ApplyRoundedCorners(Scaled(_cornerRadius));
             Invalidate(true);
@@ -1123,6 +1242,14 @@ namespace SWGLLauncher
         /// </summary>
         protected override void WndProc(ref Message m)
         {
+            // Consequence de la "barre de titre" etendue a toute la fenetre : Windows
+            // traiterait un double-clic sur le fond comme une demande d'agrandissement.
+            if (m.Msg == WM_NCLBUTTONDBLCLK)
+            {
+                m.Result = IntPtr.Zero;
+                return;
+            }
+
             base.WndProc(ref m);
 
             if (m.Msg == WM_NCHITTEST && m.Result == HTCLIENT)

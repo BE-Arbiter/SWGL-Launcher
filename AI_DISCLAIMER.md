@@ -35,13 +35,24 @@ Claims below were checked by running code, not by inspection alone.
   removed, stock game files, `base/`, saves, player configuration and launcher files kept.
 - **Packaging** — published executable launched from a folder containing nothing but itself
   and its configuration: window, embedded background and embedded music all load.
+- **Automatic recovery** — the test server was made to stall halfway through a transfer: the
+  launcher hit the read timeout, reconnected, resumed at the right offset (`REST 100000`) and
+  finished with a correct checksum.
+- **Log panel** — rendered off-screen after a failed login, opened automatically with the
+  error and its cause; beta passwords confirmed masked, including in verbose FTP logging.
+
+## Verified in production by the maintainer
+
+- **FTPS updates against the real server**, over the maintainer's own connection. Large
+  `.pk3` transfers there lost their control connection mid-transfer; the automatic recovery
+  took over, e.g. a 756.5 MB file resumed and verified four seconds after the interruption.
+- **The ProFTPD configuration** was applied on the target Ubuntu 24.04 machine. Two directives
+  failed with Ubuntu's packaging and were fixed afterwards: `mod_tls` ships in
+  `proftpd-mod-crypto`, and `IdentLookups` needs a module that is not installed.
 
 ## What was not verified
 
-- **FTPS against a real server.** The update engine was only exercised over plain FTP against
-  the test server. TLS settings are believed correct but untested.
-- **Everything under `server/`.** The ProFTPD configuration and `add-beta.sh` were never run
-  on the target machine; treat them as a reviewed draft, not as a tested deployment.
+- **`server/add-beta.sh`** has not been confirmed to run on the target machine.
 - **Steam library rendering.** Artwork file names and the `shortcuts.vdf` format were verified,
   but no shortcut was ever written to a live Steam profile.
 - **Interface rendering on other DPI settings.** The window was checked at 100 % only.
@@ -56,4 +67,5 @@ Claims below were checked by running code, not by inspection alone.
 
 ## Model
 
-Claude Opus 5, via Claude Code. Commits carry a `Co-Authored-By` trailer naming the model.
+Claude Opus 5, then Claude Opus 5.5, via Claude Code. Commits carry a `Co-Authored-By`
+trailer naming the model that wrote them.

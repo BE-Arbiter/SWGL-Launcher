@@ -9,6 +9,12 @@ namespace SWGLLauncher
         Close,
         SoundOn,
         SoundOff,
+
+        /// <summary>Double chevron vers la droite : ouvrir le journal.</summary>
+        LogShow,
+
+        /// <summary>Double chevron vers la gauche : refermer le journal.</summary>
+        LogHide,
     }
 
     /// <summary>
@@ -120,6 +126,32 @@ namespace SWGLLauncher
                 case TitleBarGlyph.SoundOff:
                     DrawSpeaker(g, pen, color, cx, cy, size * 1.5f, Glyph == TitleBarGlyph.SoundOn);
                     break;
+
+                case TitleBarGlyph.LogShow:
+                case TitleBarGlyph.LogHide:
+                    DrawDoubleChevron(g, pen, cx, cy, half, Glyph == TitleBarGlyph.LogShow);
+                    break;
+            }
+        }
+
+        /// <summary>Deux chevrons cote a cote, pointant vers la droite ou vers la gauche.</summary>
+        private static void DrawDoubleChevron(
+            Graphics g, Pen pen, float cx, float cy, float half, bool pointsRight)
+        {
+            float direction = pointsRight ? 1f : -1f;
+            float armX = half * 0.45f;
+            float armY = half * 0.9f;
+
+            foreach (float offset in new[] { -half * 0.4f, half * 0.4f })
+            {
+                float x = cx + offset;
+
+                g.DrawLines(pen,
+                [
+                    new PointF(x - (direction * armX), cy - armY),
+                    new PointF(x + (direction * armX), cy),
+                    new PointF(x - (direction * armX), cy + armY),
+                ]);
             }
         }
 

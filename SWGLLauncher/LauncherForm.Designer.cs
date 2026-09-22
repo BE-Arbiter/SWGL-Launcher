@@ -33,7 +33,43 @@ namespace SWGLLauncher
             btnOptions = new FlatButton();
             btnUpdate = new FlatButton();
             btnStart = new FlatButton();
+            btnLog = new TitleBarButton();
+            pnlLog = new Panel();
+            txtLog = new TextBox();
+            pnlLog.SuspendLayout();
             SuspendLayout();
+            //
+            // btnLog
+            //
+            btnLog.Glyph = TitleBarGlyph.LogShow;
+            btnLog.Name = "btnLog";
+            btnLog.Size = new Size(34, 34);
+            btnLog.TabIndex = 6;
+            btnLog.Click += BtnLog_Click;
+            //
+            // pnlLog
+            //
+            pnlLog.BackColor = Color.FromArgb(16, 16, 20);
+            pnlLog.Controls.Add(txtLog);
+            pnlLog.Name = "pnlLog";
+            pnlLog.Padding = new Padding(10, 8, 4, 8);
+            pnlLog.Size = new Size(420, 386);
+            pnlLog.TabIndex = 7;
+            pnlLog.Visible = false;
+            pnlLog.Paint += PnlLog_Paint;
+            //
+            // txtLog
+            //
+            txtLog.BackColor = Color.FromArgb(16, 16, 20);
+            txtLog.BorderStyle = BorderStyle.None;
+            txtLog.Dock = DockStyle.Fill;
+            txtLog.Font = new Font("Consolas", 8.5F);
+            txtLog.ForeColor = Color.FromArgb(205, 210, 215);
+            txtLog.Multiline = true;
+            txtLog.Name = "txtLog";
+            txtLog.ReadOnly = true;
+            txtLog.ScrollBars = ScrollBars.Vertical;
+            txtLog.TabStop = false;
             //
             // btnMusic
             //
@@ -94,6 +130,8 @@ namespace SWGLLauncher
             BackColor = Color.Black;
             BackgroundImageLayout = ImageLayout.Stretch;
             ClientSize = new Size(960, 540);
+            Controls.Add(pnlLog);
+            Controls.Add(btnLog);
             Controls.Add(btnOptions);
             Controls.Add(btnUpdate);
             Controls.Add(btnStart);
@@ -108,6 +146,8 @@ namespace SWGLLauncher
             ShowInTaskbar = true;
             StartPosition = FormStartPosition.CenterScreen;
             Text = "SWGL Launcher";
+            pnlLog.ResumeLayout(false);
+            pnlLog.PerformLayout();
             ResumeLayout(false);
         }
 
@@ -119,5 +159,8 @@ namespace SWGLLauncher
         private FlatButton btnOptions;
         private FlatButton btnUpdate;
         private FlatButton btnStart;
+        private TitleBarButton btnLog;
+        private Panel pnlLog;
+        private TextBox txtLog;
     }
 }

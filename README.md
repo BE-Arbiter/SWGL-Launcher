@@ -16,7 +16,10 @@ channel or on a private beta channel, then starts the game. It ships as a single
   size and SHA-256. The launcher makes the installation match it, so the same code path
   installs, repairs, updates, switches channel and rolls back.
 - **Resumable downloads,** verified by checksum, written through a temporary file so an
-  interrupted transfer never leaves a truncated `.pk3` behind.
+  interrupted transfer never leaves a truncated `.pk3` behind. A transfer cut by the network
+  reconnects and resumes on its own, up to three times.
+- **Log panel** listing every step, download and error — opened with the `»` button, and
+  automatically when something fails.
 - **Cleanup** of files that do not belong to the channel, with the stock game files, the
   `base` folder and the player's saves left alone.
 - **Jedi Outcast asset import**, for the mod's JO-derived missions.
@@ -42,7 +45,8 @@ Then run `SWGLLauncher.exe`. On the first update it will download the mod into p
 ## Interface
 
 The title bar carries a speaker button — it mutes the music and remembers the choice —
-alongside minimise and close.
+alongside minimise and close. At the top left, `»` opens the log panel and `«` closes it; the
+text can be selected and copied.
 
 At the bottom left, **Options** opens upward:
 
@@ -71,7 +75,10 @@ relative to the executable or absolute; colours are `#RRGGBB` or `#AARRGGBB`.
 | `install.path` | Folder to synchronise. `.` means the launcher's own folder. |
 | `state.file` | Local state written by the launcher. |
 | `sync.remove.unknown`, `sync.keep` | Cleanup — see below. |
+| `sync.download.retries` | Automatic retries of an interrupted download, each resuming where it stopped. |
 | `ftp.host`, `ftp.port`, `ftp.tls`, `ftp.accept.any.certificate`, `ftp.timeout.ms` | Connection. `explicit` means FTPS on port 21. |
+| `ftp.noop.interval.ms` | Keeps the control connection alive during long transfers; `0` turns it off. |
+| `log.ftp.verbose` | Log every FTP command, not just warnings and errors. Passwords stay masked. |
 | `ftp.public.user`, `ftp.public.password` | Public channel account. |
 | `ftp.beta.user.prefix` | Beta account is `<prefix><code>`, password is the code. |
 | `manifest.file` | Manifest path on the server, same for every channel. |

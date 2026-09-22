@@ -12,10 +12,19 @@ namespace SWGLLauncher
         private readonly LauncherConfig _config;
         private AsyncFtpClient? _client;
 
+        // Canal de la derniere connexion, pour pouvoir se reconnecter a l'identique.
+        private string? _betaCode;
+
         public FtpClientService(LauncherConfig config) => _config = config;
 
         /// <summary>Nom du compte utilise pour la connexion courante.</summary>
         public string UserName { get; private set; } = string.Empty;
+
+        /// <summary>
+        /// Journal : recoit les avertissements et erreurs du protocole, ou tout le trafic
+        /// si log.ftp.verbose=true. Peut etre appele depuis les fils de FluentFTP.
+        /// </summary>
+        public Action<string>? Log { get; init; }
 
         /// <summary>
         /// Se connecte au canal demande.
@@ -47,13 +56,23 @@ namespace SWGLLauncher
                 password = code;
             }
 
+            int timeout = _config.GetInt("ftp.timeout.ms", 30000);
+
             var settings = new FtpConfig
             {
                 EncryptionMode = ParseEncryptionMode(_config.GetString("ftp.tls", "explicit")),
                 ValidateAnyCertificate = _config.GetBool("ftp.accept.any.certificate", true),
-                ConnectTimeout = _config.GetInt("ftp.timeout.ms", 15000),
-                ReadTimeout = _config.GetInt("ftp.timeout.ms", 15000),
+                ConnectTimeout = timeout,
+                ReadTimeout = timeout,
+                DataConnectionConnectTimeout = timeout,
+                DataConnectionReadTimeout = timeout,
                 RetryAttempts = 3,
+
+                // Pendant un long telechargement, la connexion de controle ne transporte
+                // rien : un routeur ou un pare-feu la coupe comme inactive, et la fin du
+                // transfert n'est jamais confirmee. NOOP et keep-alive TCP l'entretiennent.
+                NoopInterval = _config.GetInt("ftp.noop.interval.ms", 30000),
+                SocketKeepAlive = true,
             };
 
             await DisposeAsync();
@@ -61,8 +80,40 @@ namespace SWGLLauncher
             _client = new AsyncFtpClient(
                 host, user, password, _config.GetInt("ftp.port", 21), settings);
 
+            if (Log is not null)
+            {
+                bool verbose = _config.GetBool("log.ftp.verbose", false);
+
+                _client.LegacyLogger = (level, message) =>
+                {
+                    if (!verbose && level is not (FtpTraceLevel.Warn or FtpTraceLevel.Error))
+                    {
+                        return;
+                    }
+
+                    // Par precaution : le mot de passe d'une beta est son code.
+                    string line = message.TrimEnd();
+                    if (line.Contains("PASS ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        line = "> PASS ***";
+                    }
+
+                    Log($"FTP {level}: {line}");
+                };
+            }
+
             await _client.Connect(cancellationToken);
             UserName = user;
+            _betaCode = betaCode;
+        }
+
+        /// <summary>
+        /// Rouvre une connexion neuve sur le meme canal, apres une coupure : une connexion
+        /// de controle qui a expire ne se recupere pas.
+        /// </summary>
+        public Task ReconnectAsync(CancellationToken cancellationToken)
+        {
+            return ConnectAsync(_betaCode, cancellationToken);
         }
 
         /// <summary>Telecharge et analyse le manifeste du canal connecte.</summary>
