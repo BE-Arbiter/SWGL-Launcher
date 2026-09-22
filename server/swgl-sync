@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# swgl-sync — gestion des branches du depot FTP SWGL : le public et les betas.
+#
+#   swgl-sync update                    regenere le public, puis toutes les betas
+#   swgl-sync update <branche> [ver]    regenere une branche : "public" ou un code
+#   swgl-sync create <code>             cree une beta
+#   swgl-sync remove <code>             ferme une beta (ses fichiers restent)
+#
+# Une beta <code> donne le compte "swgl-<code>", mot de passe "<code>", qui voit
+# /base, /beta-<code>, /beta-<code>.diff et son /manifest.json.
+# ==============================================================================
+set -euo pipefail
+
+ROOT=/srv/swgl
+JAILS=/srv/swgl-jails
+GROUP=swgl
+OWNER=swgl-dev
+BETAS_CONF=/etc/proftpd/conf.d/swgl-betas.conf
+MANIFEST_TOOL=${MANIFEST_TOOL:-SWGLManifest}
+
+# Prefixe des comptes : doit correspondre a ftp.beta.user.prefix du launcher.
+USER_PREFIX=swgl-
+# Prefixe des dossiers et des .diff sur le disque.
+DIR_PREFIX=beta-
+PUBLIC=public
+
+die() {
+    echo "swgl-sync: $*" >&2
+    exit 1
+}
+
+usage() {
+    cat >&2 <<EOF
+usage:
+  swgl-sync update                    public, puis toutes les betas
+  swgl-sync update <branche> [ver]    une branche : "$PUBLIC" ou un code de beta
+  swgl-sync create <code>             cree une beta
+  swgl-sync remove <code>             ferme une beta (ses fichiers restent)
+EOF
+    exit 1
+}
+
+check_code() {
+    [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]] || die "code invalide : $1"
+    [[ "$1" != "$PUBLIC" ]] || die "\"$PUBLIC\" est reserve au canal public"
+}
+
+reload_proftpd() {
+    proftpd --configtest >/dev/null && systemctl reload proftpd
+}
+
+# Codes des betas existantes, d'apres les dossiers beta-<code> du depot.
+list_betas() {
+    local dir
+    for dir in "$ROOT/$DIR_PREFIX"*/; do
+        [[ -d "$dir" ]] || continue
+        dir=${dir%/}
+        echo "${dir##*/"$DIR_PREFIX"}"
+    done
+}
+
+default_version() {
+    date +%Y.%m.%d.%H%M
+}
+
+# ------------------------------------------------------------------------------
+# update
+# ------------------------------------------------------------------------------
+
+update_public() {
+    local version=${1:-$(default_version)}
+
+    echo "== $PUBLIC ($version)"
+    "$MANIFEST_TOOL" --source "$ROOT/base" --source-prefix /base \
+                     --channel "$PUBLIC" --version "$version" \
+                     --output "$ROOT/manifest-public.json"
+    chown "$OWNER:$GROUP" "$ROOT/manifest-public.json"
+}
+
+update_beta() {
+    local code=$1
+    local version=${2:-$(default_version)}
+    local home="$ROOT/$DIR_PREFIX$code"
+
+    [[ -d "$home" ]] || die "beta inconnue : $code ($home absent)"
+
+    # Les fichiers de la beta l'emportent sur ceux de base au meme chemin.
+    echo "== beta $code ($version)"
+    "$MANIFEST_TOOL" --source "$home" --source-prefix "/$DIR_PREFIX$code" \
+                     --base "$ROOT/base" --base-prefix /base \
+                     --channel "$DIR_PREFIX$code" --version "$version" \
+                     --output "$home/manifest.json"
+    chown "$OWNER:$GROUP" "$home/manifest.json"
+}
+
+cmd_update() {
+    if [[ $# -eq 0 ]]; then
+        update_public
+
+        local code
+        while read -r code; do
+            update_beta "$code"
+        done < <(list_betas)
+
+        return
+    fi
+
+    local branch=$1
+    shift
+    [[ $# -le 1 ]] || usage
+
+    if [[ "$branch" == "$PUBLIC" ]]; then
+        update_public "$@"
+
+        # Chaque beta embarque les fichiers de base avec leur empreinte : si base a
+        # change, leurs manifestes sont perimes.
+        if [[ -n "$(list_betas)" ]]; then
+            echo "note : les betas embarquent base ; si base a change, 'swgl-sync update' les regenere aussi." >&2
+        fi
+    else
+        check_code "$branch"
+        update_beta "$branch" "$@"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# create
+# ------------------------------------------------------------------------------
+
+cmd_create() {
+    [[ $# -eq 1 ]] || usage
+
+    local code=$1
+    check_code "$code"
+
+    local user="$USER_PREFIX$code"
+    local jail="$JAILS/$user"
+    local home="$ROOT/$DIR_PREFIX$code"
+    local diff="$ROOT/$DIR_PREFIX$code.diff"
+
+    if id "$user" &>/dev/null; then
+        die "le compte $user existe deja"
+    fi
+
+    # Les fichiers de la beta appartiennent au compte de publication.
+    install -d -o "$OWNER" -g "$GROUP" -m 755 "$home"
+    [[ -f "$diff" ]] || install -o "$OWNER" -g "$GROUP" -m 644 /dev/null "$diff"
+
+    # La prison est vide et appartient a root : rien ne peut y etre ecrit.
+    install -d -o root -g root -m 755 "$jail"
+
+    useradd --home-dir "$jail" --no-create-home --shell /usr/sbin/nologin \
+            --gid "$GROUP" "$user"
+
+    # Mot de passe = code : qui connait le code a de toute facon acces a la beta.
+    echo "$user:$code" | chpasswd
+
+    touch "$BETAS_CONF"
+    cat >> "$BETAS_CONF" <<EOF
+
+<IfUser $user>
+  DefaultRoot $jail
+  VRootAlias $ROOT/base base
+  VRootAlias $home $DIR_PREFIX$code
+  VRootAlias $diff $DIR_PREFIX$code.diff
+  VRootAlias $home/manifest.json manifest.json
+</IfUser>
+EOF
+
+    reload_proftpd
+
+    echo "beta $code creee"
+    echo "  compte       : $user"
+    echo "  mot de passe : $code"
+    echo "  fichiers     : $home"
+    echo "  ensuite      : deposer les fichiers, puis 'swgl-sync update $code'"
+}
+
+# ------------------------------------------------------------------------------
+# remove
+# ------------------------------------------------------------------------------
+
+cmd_remove() {
+    [[ $# -eq 1 ]] || usage
+
+    local code=$1
+    check_code "$code"
+
+    local user="$USER_PREFIX$code"
+    local jail="$JAILS/$user"
+
+    if id "$user" &>/dev/null; then
+        userdel "$user"
+    else
+        echo "  (compte $user deja absent)"
+    fi
+
+    rmdir "$jail" 2>/dev/null || true
+
+    # Retire le bloc <IfUser swgl-code>...</IfUser>.
+    if [[ -f "$BETAS_CONF" ]]; then
+        awk -v u="$user" '
+            $0 == "<IfUser " u ">" { skip = 1 }
+            skip == 0 { print }
+            $0 == "</IfUser>" && skip == 1 { skip = 0 }
+        ' "$BETAS_CONF" > "$BETAS_CONF.tmp"
+        mv "$BETAS_CONF.tmp" "$BETAS_CONF"
+    fi
+
+    reload_proftpd
+
+    echo "beta $code fermee : compte et acces supprimes"
+    echo "  les fichiers restent : $ROOT/$DIR_PREFIX$code et $ROOT/$DIR_PREFIX$code.diff"
+}
+
+# ------------------------------------------------------------------------------
+
+[[ $EUID -eq 0 ]] || die "a lancer en root (sudo)"
+
+case "${1:-}" in
+    update) shift; cmd_update "$@" ;;
+    create) shift; cmd_create "$@" ;;
+    remove) shift; cmd_remove "$@" ;;
+    *)      usage ;;
+esac

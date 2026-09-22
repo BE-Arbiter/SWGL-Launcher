@@ -1,0 +1,4 @@
+# Fichiers executes sur le serveur Linux : toujours en fins de ligne LF,
+# y compris dans une copie de travail Windows. Un CRLF casse bash.
+server/swgl-sync        text eol=lf
+server/*.conf           text eol=lf

@@ -21,18 +21,18 @@ Le préfixe `swgl-` des comptes doit rester identique à `ftp.beta.user.prefix` 
 /srv/swgl/                    ← racine de swgl-dev
 ├── base/                     commun à tous les canaux
 ├── manifest-public.json      manifeste du canal public
-├── beta-099cw/               fichiers d'une beta
+├── beta-elween/              fichiers d'une beta
 │   └── manifest.json         son manifeste
-└── beta-099cw.diff           son journal
+└── beta-elween.diff          son journal
 
 /srv/swgl-jails/              ← dossiers vides servant de racine aux comptes en lecture
 ├── swgl-public/
-└── swgl-099cw/
+└── swgl-elween/
 ```
 
 Les comptes en lecture ne sont pas enfermés dans un vrai dossier mais dans une **prison
 vide**, où `base`, le dossier de beta et le `.diff` sont montés par `VRootAlias`. C'est ce qui
-donne à tous la même vue — `/base/...` et `/beta-099cw/...` — et rend les manifestes
+donne à tous la même vue — `/base/...` et `/beta-elween/...` — et rend les manifestes
 interchangeables entre canaux.
 
 ## Pourquoi ProFTPD
@@ -135,26 +135,64 @@ sudo ufw allow 49152:49200/tcp
 Derrière un NAT, décommenter `MasqueradeAddress` dans la configuration, sans quoi le mode
 passif annoncerait une adresse privée injoignable.
 
-## 8. Créer une beta
+## 8. L'outil `swgl-sync`
+
+Il gère les branches du dépôt : le public et les betas. L'installer depuis GitHub, et non en
+copiant un fichier Windows — un fichier en fins de ligne CRLF ne s'exécute pas sous bash :
 
 ```bash
-sudo ./add-beta.sh 099cw
+sudo curl -fsSLo /usr/local/sbin/swgl-sync \
+     https://raw.githubusercontent.com/BE-Arbiter/SWGL-Launcher/main/server/swgl-sync
+sudo chmod +x /usr/local/sbin/swgl-sync
 ```
 
-Le script crée `/srv/swgl/beta-099cw/`, le fichier `beta-099cw.diff`, la prison
-`/srv/swgl-jails/swgl-099cw/`, le compte `swgl-099cw` (mot de passe `099cw`), ajoute son bloc
-à `swgl-betas.conf` et recharge le service. Le testeur voit alors :
+Il s'appuie sur `SWGLManifest`, à installer dans `/usr/local/bin` (voir le README principal
+pour le compiler en `linux-x64`).
+
+| Commande | Effet |
+| --- | --- |
+| `swgl-sync update` | Régénère le manifeste du public, puis celui de chaque beta. |
+| `swgl-sync update <branche> [version]` | Régénère une seule branche : `public` ou un code de beta. |
+| `swgl-sync create <code>` | Crée une beta. |
+| `swgl-sync remove <code>` | Ferme une beta ; ses fichiers restent sur le disque. |
+
+Sans version, c'est la date du jour (`2026.09.22.2143`).
+
+### Créer une beta
+
+```bash
+sudo swgl-sync create elween
+```
+
+Crée `/srv/swgl/beta-elween/`, le fichier `beta-elween.diff`, la prison
+`/srv/swgl-jails/swgl-elween/`, le compte `swgl-elween` (mot de passe `elween`), ajoute son
+bloc à `swgl-betas.conf` et recharge ProFTPD après un `--configtest`. Il reste à déposer dans
+`beta-elween/` les fichiers qui diffèrent de `base`, en respectant l'arborescence du GameData,
+puis :
+
+```bash
+sudo swgl-sync update elween "Ep3 test 1"
+```
+
+Le testeur voit alors :
 
 ```
 /                      prison vide
 /base                  lecture seule
-/beta-099cw            lecture seule
-/beta-099cw.diff
+/beta-elween           lecture seule
+/beta-elween.diff
 /manifest.json         celui de la beta
 ```
 
-Fermer une beta : `sudo ./add-beta.sh --remove 099cw`. Le compte et ses accès disparaissent,
-les fichiers restent.
+### Mettre à jour `base`
+
+Chaque manifeste de beta embarque aussi les fichiers de `base`, avec leur empreinte. Après une
+modification de `base`, il faut donc tout régénérer — `swgl-sync update` sans argument — et
+non le seul public, sans quoi les testeurs se heurteraient à des empreintes périmées. L'outil
+le rappelle quand on ne met à jour que le public.
+
+Chaque beta re-hache les 15 Go de `base` : avec plusieurs betas ouvertes, la mise à jour
+complète prend quelques minutes par branche.
 
 ## 9. Vérifier
 
@@ -162,7 +200,7 @@ les fichiers restent.
 sudo apt install lftp
 
 lftp -u swgl-public,swgl-public -e "set ssl:verify-certificate no; ls; quit" ftp://93.127.203.21
-lftp -u swgl-099cw,099cw        -e "set ssl:verify-certificate no; ls; ls base; quit" ftp://93.127.203.21
+lftp -u swgl-elween,elween      -e "set ssl:verify-certificate no; ls; ls base; quit" ftp://93.127.203.21
 lftp -u swgl-dev,MDP            -e "set ssl:verify-certificate no; put /etc/hostname -o t.txt; rm t.txt; quit" ftp://93.127.203.21
 ```
 
@@ -203,17 +241,10 @@ manifest.file=/manifest.json
 ```
 
 Tous les canaux partageant la même vue, les chemins d'un manifeste sont les mêmes partout :
-un fichier commun est en `/base/SWGL/x.pk3`, un fichier de beta en `/beta-099cw/SWGL/x.pk3`.
+un fichier commun est en `/base/SWGL/x.pk3`, un fichier de beta en `/beta-elween/SWGL/x.pk3`.
+`swgl-sync update` génère les manifestes en conséquence.
 
-```bash
-# canal public  →  /srv/swgl/manifest-public.json
-dotnet run --project Tools/SWGLManifest -- --source <base> --source-prefix /base --channel public
+Côté testeur : *Options* → *Beta channel* → *Add beta code...* → `elween`.
 
-# une beta      →  /srv/swgl/beta-099cw/manifest.json
-dotnet run --project Tools/SWGLManifest -- --source <beta-099cw> --source-prefix /beta-099cw \
-                                           --base   <base>       --base-prefix   /base \
-                                           --channel beta-099cw --version "Ep3 test 4"
-```
-
-Le fichier `beta-099cw.diff` n'est pas lu par le launcher : c'est un journal lisible, à
+Le fichier `beta-elween.diff` n'est pas lu par le launcher : c'est un journal lisible, à
 afficher ou distribuer comme tu veux.

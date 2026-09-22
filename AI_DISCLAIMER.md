@@ -52,7 +52,7 @@ Claims below were checked by running code, not by inspection alone.
 
 ## What was not verified
 
-- **`server/add-beta.sh`** has not been confirmed to run on the target machine.
+- **`server/swgl-sync`**: `update` was tested with a stubbed manifest tool (branch discovery, arguments, exit codes); `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
 - **Steam library rendering.** Artwork file names and the `shortcuts.vdf` format were verified,
   but no shortcut was ever written to a live Steam profile.
 - **Interface rendering on other DPI settings.** The window was checked at 100 % only.

@@ -139,17 +139,17 @@ SWGLManifest --source /srv/swgl/base --source-prefix /base \
              --output /srv/swgl/manifest-public.json
 
 # a beta: its own files win over the shared ones
-SWGLManifest --source /srv/swgl/beta-099cw --source-prefix /beta-099cw \
+SWGLManifest --source /srv/swgl/beta-elween --source-prefix /beta-elween \
              --base   /srv/swgl/base       --base-prefix   /base \
-             --channel beta-099cw --version "Ep3 test 4" \
-             --output /srv/swgl/beta-099cw/manifest.json
+             --channel beta-elween --version "Ep3 test 4" \
+             --output /srv/swgl/beta-elween/manifest.json
 ```
 
 `SWGLManifest --help` lists the remaining options (`--notes`, `--exclude`, ...).
 
 Server side, [`server/README.md`](server/README.md) documents the ProFTPD setup: one
 read/write publishing account, one read-only public account, one account per beta seeing only
-the shared folder and its own build. `server/add-beta.sh` provisions a beta in one command.
+the shared folder and its own build. `server/swgl-sync` creates and removes betas and regenerates every manifest in one command.
 
 ## Building from source
 
@@ -180,7 +180,7 @@ dotnet publish Tools/SWGLManifest/SWGLManifest.csproj -c Release -r linux-x64 \
 SWGLLauncher/            the launcher (WinForms, .NET 10)
   SWGL/                  artwork and music, embedded at build time
 Tools/SWGLManifest/      manifest generator
-server/                  ProFTPD configuration and beta provisioning
+server/                  ProFTPD configuration and the swgl-sync tool
 ```
 
 ## Known limitations
