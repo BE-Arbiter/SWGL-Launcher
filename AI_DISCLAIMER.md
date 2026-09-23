@@ -60,6 +60,8 @@ Claims below were checked by running code, not by inspection alone.
 - **The ProFTPD configuration** was applied on the target Ubuntu 24.04 machine. Two directives
   failed with Ubuntu's packaging and were fixed afterwards: `mod_tls` ships in
   `proftpd-mod-crypto`, and `IdentLookups` needs a module that is not installed.
+- **Release workflow**: the `v0.2.0-alpha` tag built and published the first release, with
+  `SWGLLauncher.exe`, its SHA-256 digest, and `SWGLLauncher.zip`.
 - **SSH access for `swgl-dev`** (`swgl-sync-ssh`, sudoers, sshd block): applied on the server,
   the `swgl-sync>` prompt works and no shell is reachable. The word splitting was also checked
   locally: `$(...)`, `;` and `*` reach `swgl-sync` as plain text.
@@ -76,8 +78,8 @@ Claims below were checked by running code, not by inspection alone.
 ## Known caveats
 
 - The launcher updates itself from GitHub releases only; a `SWGLLauncher.exe` listed in a
-  manifest would fail to be replaced while running. The release workflow has not run yet: its
-  first real run will be the first release.
+  manifest would fail to be replaced while running. Releases are built by the
+  `Release` workflow; its first run published `v0.2.0-alpha`.
 - The cleanup deletes files matching `sync.deletable`. A file the mod ships outside those
   patterns is only cleaned up if the channel forces it with `swgl-sync force-delete`; a broad
   forced pattern deletes everything it covers.

@@ -36,8 +36,8 @@ Windows 10 or 11, 64-bit. Nothing else — the .NET runtime is bundled in the ex
 
 ## Installation
 
-Drop the executable and its `SWGL` folder into the game's `GameData` folder, next to
-`jasp.exe`:
+Download `SWGLLauncher.zip` from the [latest release](https://github.com/BE-Arbiter/SWGL-Launcher/releases/latest)
+and extract it into the game's `GameData` folder, next to `jasp.exe`:
 
 ```
 GameData\
@@ -46,7 +46,8 @@ GameData\
     └── launcher_music.mp3
 ```
 
-Then run `SWGLLauncher.exe`. On the first update it will download the mod into place.
+Then run `SWGLLauncher.exe`. On the first update it will download the mod into place. From
+then on it also keeps itself up to date from the GitHub releases.
 
 ## Interface
 
@@ -177,8 +178,8 @@ a GitHub release with `SWGLLauncher.exe` (used by the self-update) and `SWGLLaun
 (executable and `SWGL` folder, for new installs):
 
 ```bash
-git tag v0.2.0-alpha
-git push origin v0.2.0-alpha
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 At startup, the launcher asks GitHub for the latest release. If its version is higher, it
@@ -187,8 +188,7 @@ itself to `SWGLLauncher.exe.old` — Windows allows renaming a running executabl
 overwriting it — puts the new one in its place and restarts; the new instance deletes the
 `.old`. If anything fails, it carries on with the current version and says so in the log.
 
-Only the executable is updated. A local build carries the version of the project file
-(`0.2.0-alpha`) and replaces itself with any newer release: set `update.enabled=false` to test one.
+Only the executable is updated. A local build carries the `<Version>` of the project file and replaces itself with any newer release: set `update.enabled=false` to test one.
 Debug builds never update themselves.
 
 ## Building from source
