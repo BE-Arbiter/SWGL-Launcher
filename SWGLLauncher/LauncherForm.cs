@@ -36,13 +36,11 @@ namespace SWGLLauncher
         private const string DefaultSteamShortcutName = "STAR WARS™: Galactic Legacy";
 
         /// <summary>
-        /// Ce que le nettoyage ne touche jamais : le dossier du jeu et les fichiers de
-        /// l'installation Jedi Academy d'origine, nommes un par un. Un executable ou une
-        /// DLL qui ne figure pas ici n'est pas du jeu et sera donc supprime.
+        /// Seuls fichiers que le nettoyage peut supprimer quand le canal ne les contient
+        /// plus : ceux que publie le mod. Tout le reste du GameData est laisse en place.
         /// </summary>
-        private const string DefaultKeepPatterns =
-            "base/**,EaxMan.dll,IFC22.dll,OpenAL32.dll,SWGLLauncher.exe,"
-            + "jagamex86.dll,jamp.exe,jasp.exe,launcher.properties,version.inf";
+        private const string DefaultDeletablePatterns =
+            "base/zzzzzzz_SWGL_JKJO.pk3,SWGL/SWGL_*.pk3,SWGL/*.dll";
 
         private static readonly Color MenuBackColor = Color.FromArgb(22, 22, 26);
 
@@ -85,6 +83,11 @@ namespace SWGLLauncher
         private bool _isSyncing;
 
         private int _logLineCount;
+
+        // Notes de version du canal, lues avec son manifeste ; null si le canal n'en a pas.
+        private string? _patchNotes;
+        private string _patchNotesTitle = string.Empty;
+        private PatchNotesForm? _patchNotesForm;
 
         public LauncherForm()
         {
@@ -140,6 +143,10 @@ namespace SWGLLauncher
             {
                 button.AccentColor = _accentColor;
             }
+
+            lnkPatchNotes.LinkColor = _accentColor;
+            lnkPatchNotes.VisitedLinkColor = _accentColor;
+            lnkPatchNotes.ActiveLinkColor = Color.White;
 
             _musicEnabled = _config.GetBool("music.enabled", true);
             btnMusic.Glyph = _musicEnabled ? TitleBarGlyph.SoundOn : TitleBarGlyph.SoundOff;
@@ -423,6 +430,7 @@ namespace SWGLLauncher
 
             _selectedCode = code;
             _config.Set("channel.selected", code);
+            SetPatchNotes(null, string.Empty);
             SetStatus($"Channel: {CurrentChannelLabel}", string.Empty);
 
             if (SyncConfigured)
@@ -761,13 +769,14 @@ namespace SWGLLauncher
                 Manifest manifest = await ftp.DownloadManifestAsync(token);
                 Log($"Manifest: {DescribeChannel(manifest.Channel, manifest.Version)}, {manifest.Files.Count} file(s)");
 
+                await LoadPatchNotesAsync(ftp, manifest, token);
+
                 var engine = new SyncEngine(InstallRoot, StatePath)
                 {
                     BetaCode = betaCode ?? string.Empty,
-                    RemoveUnknown = _config.GetBool("sync.remove.unknown", true),
                     Protected = BuildProtectedPaths(),
-                    KeepPatterns = _config
-                        .GetString("sync.keep", DefaultKeepPatterns)
+                    DeletablePatterns = _config
+                        .GetString("sync.deletable", DefaultDeletablePatterns)
                         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
                     DownloadRetries = Math.Max(0, _config.GetInt("sync.download.retries", 3)),
                     Log = Log,
@@ -938,6 +947,97 @@ namespace SWGLLauncher
         }
 
         // ------------------------------------------------------------------
+        // Notes de version
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Lit les notes de version du canal. Leur absence ou un echec de lecture ne
+        /// bloque jamais la mise a jour : le lien n'apparait simplement pas.
+        /// </summary>
+        private async Task LoadPatchNotesAsync(FtpClientService ftp, Manifest manifest, CancellationToken token)
+        {
+            string? notes = null;
+
+            try
+            {
+                notes = await ftp.DownloadPatchNotesAsync(token);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                Log($"Patch notes unavailable: {exception.Message}");
+            }
+
+            string version = manifest.Version.Length > 0 ? $" {manifest.Version}" : string.Empty;
+            SetPatchNotes(notes, $"Patch notes — {CurrentChannelLabel}{version}");
+        }
+
+        private void SetPatchNotes(string? notes, string title)
+        {
+            _patchNotes = notes;
+            _patchNotesTitle = title;
+
+            lnkPatchNotes.Visible = notes is not null;
+
+            // Une fenetre deja ouverte suit le canal : notes remplacees, ou fermee s'il n'y
+            // en a plus.
+            if (_patchNotesForm is { IsDisposed: false })
+            {
+                if (notes is null)
+                {
+                    _patchNotesForm.Close();
+                }
+                else
+                {
+                    _patchNotesForm.ShowNotes(title, notes);
+                }
+            }
+
+            InvalidateStatusArea();
+        }
+
+        private void LnkPatchNotes_LinkClicked(object? sender, LinkLabelLinkClickedEventArgs e)
+        {
+            if (_patchNotes is null)
+            {
+                return;
+            }
+
+            // Une seule fenetre : un second clic la ramene au premier plan.
+            if (_patchNotesForm is { IsDisposed: false })
+            {
+                if (_patchNotesForm.WindowState == FormWindowState.Minimized)
+                {
+                    _patchNotesForm.WindowState = FormWindowState.Normal;
+                }
+
+                _patchNotesForm.Activate();
+                return;
+            }
+
+            var form = new PatchNotesForm(_accentColor, DpiScale)
+            {
+                StartPosition = FormStartPosition.Manual,
+            };
+
+            // CenterParent ne vaut que pour une fenetre modale : centrage a la main.
+            form.Location = new Point(
+                Left + ((Width - form.Width) / 2),
+                Top + ((Height - form.Height) / 2));
+
+            form.ShowNotes(_patchNotesTitle, _patchNotes);
+            form.FormClosed += (_, _) =>
+            {
+                if (_patchNotesForm == form)
+                {
+                    _patchNotesForm = null;
+                }
+            };
+
+            _patchNotesForm = form;
+            form.Show(this);
+        }
+
+        // ------------------------------------------------------------------
         // Journal
         // ------------------------------------------------------------------
 
@@ -1088,6 +1188,12 @@ namespace SWGLLauncher
             pnlLog.Size = new Size(Scaled(320), Math.Max(Scaled(80), logBottom - logTop));
             pnlLog.Padding = new Padding(Scaled(10), Scaled(8), Scaled(4), Scaled(8));
 
+            // Lien des notes de version : a droite de la ligne d'etat, apres la version.
+            int statusY = ClientSize.Height - Scaled(BarHeight) + Scaled(StatusOffsetY);
+            lnkPatchNotes.Size = new Size(lnkPatchNotes.PreferredWidth, Scaled(18));
+            lnkPatchNotes.Location = new Point(
+                ClientSize.Width - padding - lnkPatchNotes.Width, statusY);
+
             ApplyRoundedCorners(Scaled(_cornerRadius));
             Invalidate(true);
         }
@@ -1194,8 +1300,11 @@ namespace SWGLLauncher
                 graphics, _statusText, font, statusRect, _accentColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
+            // Le lien des notes de version prend la fin de la ligne : la version s'arrete avant.
+            int linkWidth = lnkPatchNotes.Visible ? lnkPatchNotes.Width + Scaled(10) : 0;
+
             var detailRect = new Rectangle(
-                padding + (int)(width * 0.5f), statusRect.Y, (int)(width * 0.5f), Scaled(18));
+                padding + (int)(width * 0.5f), statusRect.Y, (int)(width * 0.5f) - linkWidth, Scaled(18));
 
             TextRenderer.DrawText(
                 graphics, _detailText, font, detailRect, Color.FromArgb(200, 210, 210, 215),

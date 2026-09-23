@@ -31,6 +31,10 @@ namespace SWGLLauncher
                 entry.Path = NormalizeRelativePath(entry.Path);
             }
 
+            manifest.Delete = [.. (manifest.Delete ?? [])
+                .Select(NormalizeRelativePath)
+                .Where(pattern => pattern.Length > 0)];
+
             return manifest;
         }
 
@@ -87,7 +91,7 @@ namespace SWGLLauncher
         /// <summary>
         /// Motif simple facon shell : "*" reste dans un dossier, "**" traverse, "?" vaut
         /// un caractere. La comparaison ignore la casse, comme Windows. Partage entre le
-        /// launcher (fichiers a conserver) et l'outil de manifeste (fichiers retires d'une beta).
+        /// launcher (fichiers supprimables) et l'outil de manifeste (listes de retrait et de suppression).
         /// </summary>
         public static bool MatchesPattern(string path, string pattern)
         {

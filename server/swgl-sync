@@ -8,9 +8,14 @@
 #   swgl-sync remove <code>             close a beta (its files are kept)
 #   swgl-sync exclude <code> [path]     drop base files from this beta
 #   swgl-sync restore <code> <path>     undo an exclusion
+#   swgl-sync force-delete <branch> [path]   delete files from players' installs
+#   swgl-sync cancel-delete <branch> <path>  undo a forced deletion
 #
 # Beta <code> gets the account "swgl-<code>", password "<code>", which sees
 # /base, /beta-<code>, /beta-<code>.diff and its own /manifest.json.
+#
+# Patch notes: patchnotes-public.md and patchnotes-<code>.md at the root of the
+# repository, seen by each account as /patchnotes.md. Empty means no notes.
 # ==============================================================================
 set -euo pipefail
 
@@ -42,6 +47,12 @@ usage:
   swgl-sync exclude <code> [path]     drop base files from this beta;
                                       without a path, show the list
   swgl-sync restore <code> <path>     undo an exclusion
+  swgl-sync force-delete <branch> [path]
+                                      delete files from players' installs, even
+                                      outside the launcher's own patterns;
+                                      without a path, show the list
+  swgl-sync cancel-delete <branch> <path>
+                                      undo a forced deletion
 
 Paths are relative to GameData ("SWGL/SWGL_Menu.pk3"). "*" stays within a
 folder, "**" crosses folders. In a shell, quote patterns; at the swgl-sync>
@@ -79,6 +90,51 @@ remove_list() {
     echo "$ROOT/$DIR_PREFIX$1.remove"
 }
 
+# Files the launcher must delete from players' installs, even outside its own
+# deletable patterns. Per branch: "public" or a beta code.
+delete_list() {
+    echo "$ROOT/forcedelete-$1.list"
+}
+
+# Patch notes of a branch: "public" or a beta code.
+patchnotes_file() {
+    echo "$ROOT/patchnotes-$1.md"
+}
+
+# The notes file always exists, empty until written: the FTP alias points to it.
+ensure_patchnotes() {
+    local file
+    file=$(patchnotes_file "$1")
+    [[ -e "$file" ]] || install -o "$OWNER" -g "$GROUP" -m 644 /dev/null "$file"
+}
+
+# Betas created before patch notes existed lack the alias: add it to their block.
+ensure_patchnotes_alias() {
+    local user="$USER_PREFIX$1"
+    local line="  VRootAlias $(patchnotes_file "$1") patchnotes.md"
+
+    [[ -f "$BETAS_CONF" ]] || return 0
+    grep -Fxq -- "<IfUser $user>" "$BETAS_CONF" || return 0
+
+    if awk -v u="<IfUser $user>" -v l="$line" '
+            $0 == u { inside = 1 }
+            inside && $0 == l { found = 1 }
+            $0 == "</IfUser>" { inside = 0 }
+            END { exit !found }
+        ' "$BETAS_CONF"; then
+        return 0
+    fi
+
+    awk -v u="<IfUser $user>" -v l="$line" '
+        { print }
+        $0 == u { print l }
+    ' "$BETAS_CONF" > "$BETAS_CONF.tmp"
+    mv "$BETAS_CONF.tmp" "$BETAS_CONF"
+
+    echo "  patch notes alias added for $user"
+    reload_proftpd
+}
+
 require_beta() {
     check_code "$1"
     [[ -d "$ROOT/$DIR_PREFIX$1" ]] || die "unknown beta: $1 ($ROOT/$DIR_PREFIX$1 missing)"
@@ -101,9 +157,17 @@ normalize_path() {
 
 update_public() {
     local version=${1:-$(default_version)}
+    ensure_patchnotes "$PUBLIC"
+
+    # Files players must delete, even outside the launcher's own patterns.
+    local deletions=()
+    local list
+    list=$(delete_list "$PUBLIC")
+    [[ -s "$list" ]] && deletions=(--delete-list "$list")
 
     echo "== $PUBLIC ($version)"
     "$MANIFEST_TOOL" --source "$ROOT/base" --source-prefix /base \
+                     "${deletions[@]}" \
                      --channel "$PUBLIC" --version "$version" \
                      --output "$ROOT/manifest-public.json"
     chown "$OWNER:$GROUP" "$ROOT/manifest-public.json"
@@ -115,6 +179,8 @@ update_beta() {
     local home="$ROOT/$DIR_PREFIX$code"
 
     [[ -d "$home" ]] || die "unknown beta: $code ($home missing)"
+    ensure_patchnotes "$code"
+    ensure_patchnotes_alias "$code"
 
     # The beta's own files win over base files at the same path, and the ones
     # in the exclusion list are dropped from base.
@@ -123,10 +189,16 @@ update_beta() {
     list=$(remove_list "$code")
     [[ -s "$list" ]] && removals=(--remove-list "$list")
 
+    # Files players must delete, even outside the launcher's own patterns.
+    local deletions=()
+    list=$(delete_list "$code")
+    [[ -s "$list" ]] && deletions=(--delete-list "$list")
+
     echo "== beta $code ($version)"
     "$MANIFEST_TOOL" --source "$home" --source-prefix "/$DIR_PREFIX$code" \
                      --base "$ROOT/base" --base-prefix /base \
                      "${removals[@]}" \
+                     "${deletions[@]}" \
                      --channel "$DIR_PREFIX$code" --version "$version" \
                      --output "$home/manifest.json"
     chown "$OWNER:$GROUP" "$home/manifest.json"
@@ -184,6 +256,7 @@ cmd_create() {
     # Beta files belong to the publishing account.
     install -d -o "$OWNER" -g "$GROUP" -m 755 "$home"
     [[ -f "$diff" ]] || install -o "$OWNER" -g "$GROUP" -m 644 /dev/null "$diff"
+    ensure_patchnotes "$code"
 
     # The jail is empty and owned by root: nothing can be written to it.
     install -d -o root -g root -m 755 "$jail"
@@ -203,6 +276,7 @@ cmd_create() {
   VRootAlias $home $DIR_PREFIX$code
   VRootAlias $diff $DIR_PREFIX$code.diff
   VRootAlias $home/manifest.json manifest.json
+  VRootAlias $(patchnotes_file "$code") patchnotes.md
 </IfUser>
 EOF
 
@@ -212,6 +286,7 @@ EOF
     echo "  account  : $user"
     echo "  password : $code"
     echo "  files    : $home"
+    echo "  notes    : $(patchnotes_file "$code") (Markdown, empty = none)"
     echo "  next     : upload the files, then 'swgl-sync update $code'"
 }
 
@@ -249,12 +324,64 @@ cmd_remove() {
     reload_proftpd
 
     echo "beta $code closed: account and access removed"
-    echo "  files kept: $ROOT/$DIR_PREFIX$code and $ROOT/$DIR_PREFIX$code.diff"
+    echo "  files kept: $ROOT/$DIR_PREFIX$code, $ROOT/$DIR_PREFIX$code.diff and $(patchnotes_file "$code")"
 }
 
 # ------------------------------------------------------------------------------
-# exclude / restore
+# Path lists: exclude / restore, force-delete / cancel-delete
 # ------------------------------------------------------------------------------
+
+# Shows a list: list_show <file> <heading> <message when empty>
+list_show() {
+    if [[ -s "$1" ]]; then
+        echo "$2"
+        sed 's/^/  /' "$1"
+    else
+        echo "$3"
+    fi
+}
+
+# Adds paths to a list: list_add <file> <path...>
+list_add() {
+    local list=$1
+    shift
+
+    [[ -f "$list" ]] || install -o "$OWNER" -g "$GROUP" -m 644 /dev/null "$list"
+
+    local path
+    for path in "$@"; do
+        path=$(normalize_path "$path")
+
+        if grep -Fxq -- "$path" "$list"; then
+            echo "  already listed: $path"
+            continue
+        fi
+
+        echo "$path" >> "$list"
+        echo "  added: $path"
+    done
+}
+
+# Removes paths from a list: list_drop <file> <path...>
+list_drop() {
+    local list=$1
+    shift
+
+    local path
+    for path in "$@"; do
+        path=$(normalize_path "$path")
+
+        if grep -Fxq -- "$path" "$list"; then
+            # grep -v fails when no line is left: not an error here.
+            grep -Fxv -- "$path" "$list" > "$list.tmp" || true
+            cat "$list.tmp" > "$list"
+            rm -f "$list.tmp"
+            echo "  removed: $path"
+        else
+            echo "  not in the list: $path"
+        fi
+    done
+}
 
 cmd_exclude() {
     [[ $# -ge 1 ]] || usage
@@ -266,39 +393,21 @@ cmd_exclude() {
     local list
     list=$(remove_list "$code")
 
-    # Without a path: show the list.
     if [[ $# -eq 0 ]]; then
-        if [[ -s "$list" ]]; then
-            echo "base files excluded from beta $code:"
-            sed 's/^/  /' "$list"
-        else
-            echo "no base file excluded from beta $code"
-        fi
+        list_show "$list" "base files excluded from beta $code:" "no base file excluded from beta $code"
         return
     fi
 
-    if [[ ! -f "$list" ]]; then
-        install -o "$OWNER" -g "$GROUP" -m 644 /dev/null "$list"
-    fi
-
+    # An exact path missing from base is almost always a typo.
     local path
     for path in "$@"; do
         path=$(normalize_path "$path")
-
-        if grep -Fxq -- "$path" "$list"; then
-            echo "  already excluded: $path"
-            continue
-        fi
-
-        # An exact path missing from base is almost always a typo.
         if [[ "$path" != *[*?]* && ! -e "$ROOT/base/$path" ]]; then
             echo "  warning: $path does not exist in base" >&2
         fi
-
-        echo "$path" >> "$list"
-        echo "  excluded: $path"
     done
 
+    list_add "$list" "$@"
     echo "next: swgl-sync update $code"
 }
 
@@ -313,22 +422,47 @@ cmd_restore() {
     list=$(remove_list "$code")
     [[ -s "$list" ]] || die "no base file excluded from beta $code"
 
-    local path
-    for path in "$@"; do
-        path=$(normalize_path "$path")
-
-        if grep -Fxq -- "$path" "$list"; then
-            # grep -v fails when no line is left: not an error here.
-            grep -Fxv -- "$path" "$list" > "$list.tmp" || true
-            cat "$list.tmp" > "$list"
-            rm -f "$list.tmp"
-            echo "  restored: $path"
-        else
-            echo "  not in the list: $path"
-        fi
-    done
-
+    list_drop "$list" "$@"
     echo "next: swgl-sync update $code"
+}
+
+# Branch argument of force-delete / cancel-delete: "public" or an existing beta.
+require_branch() {
+    [[ "$1" == "$PUBLIC" ]] || require_beta "$1"
+}
+
+cmd_force_delete() {
+    [[ $# -ge 1 ]] || usage
+
+    local branch=$1
+    shift
+    require_branch "$branch"
+
+    local list
+    list=$(delete_list "$branch")
+
+    if [[ $# -eq 0 ]]; then
+        list_show "$list" "files deleted from players' installs on $branch:" "no forced deletion on $branch"
+        return
+    fi
+
+    list_add "$list" "$@"
+    echo "next: swgl-sync update $branch"
+}
+
+cmd_cancel_delete() {
+    [[ $# -ge 2 ]] || usage
+
+    local branch=$1
+    shift
+    require_branch "$branch"
+
+    local list
+    list=$(delete_list "$branch")
+    [[ -s "$list" ]] || die "no forced deletion on $branch"
+
+    list_drop "$list" "$@"
+    echo "next: swgl-sync update $branch"
 }
 
 # ------------------------------------------------------------------------------
@@ -336,10 +470,12 @@ cmd_restore() {
 [[ $EUID -eq 0 ]] || die "must be run as root (sudo)"
 
 case "${1:-}" in
-    update)  shift; cmd_update "$@" ;;
-    create)  shift; cmd_create "$@" ;;
-    remove)  shift; cmd_remove "$@" ;;
-    exclude) shift; cmd_exclude "$@" ;;
-    restore) shift; cmd_restore "$@" ;;
-    *)       usage ;;
+    update)        shift; cmd_update "$@" ;;
+    create)        shift; cmd_create "$@" ;;
+    remove)        shift; cmd_remove "$@" ;;
+    exclude)       shift; cmd_exclude "$@" ;;
+    restore)       shift; cmd_restore "$@" ;;
+    force-delete)  shift; cmd_force_delete "$@" ;;
+    cancel-delete) shift; cmd_cancel_delete "$@" ;;
+    *)             usage ;;
 esac

@@ -21,9 +21,11 @@ Le préfixe `swgl-` des comptes doit rester identique à `ftp.beta.user.prefix`
 /srv/swgl/                    ← racine de swgl-dev
 ├── base/                     commun à tous les canaux
 ├── manifest-public.json      manifeste du canal public
+├── patchnotes-public.md      notes de version du public
 ├── beta-elween/              fichiers d'une beta
 │   └── manifest.json         son manifeste
-└── beta-elween.diff          son journal
+├── beta-elween.diff          son journal
+└── patchnotes-elween.md      ses notes de version
 
 /srv/swgl-jails/              ← dossiers vides servant de racine aux comptes en lecture
 ├── swgl-public/
@@ -161,6 +163,8 @@ pour le compiler en `linux-x64`).
 | `swgl-sync remove <code>` | Ferme une beta ; ses fichiers restent sur le disque. |
 | `swgl-sync exclude <code> [chemin...]` | Retire des fichiers de `base` pour cette beta ; sans chemin, affiche la liste. |
 | `swgl-sync restore <code> <chemin...>` | Annule un retrait. |
+| `swgl-sync force-delete <branche> [chemin...]` | Fait supprimer des fichiers chez les joueurs, hors des motifs du launcher ; sans chemin, affiche la liste. |
+| `swgl-sync cancel-delete <branche> <chemin...>` | Annule une suppression forcée. |
 
 Sans version, c'est la date du jour (`2026.09.22.2143`).
 
@@ -188,6 +192,7 @@ Le testeur voit alors :
 /beta-elween           lecture seule
 /beta-elween.diff
 /manifest.json         celui de la beta
+/patchnotes.md         ses notes de version
 ```
 
 ### Retirer des fichiers de `base` pour une beta
@@ -218,6 +223,33 @@ donc supprimé chez le testeur, puis retéléchargé s'il repasse en public.
 Cette fonction demande un `SWGLManifest` récent (option `--remove-list`) : l'ancien répond
 `Argument inconnu`.
 
+### Forcer la suppression de fichiers chez les joueurs
+
+Le launcher ne supprime que les fichiers du mod qu'un canal ne publie plus :
+`base/zzzzzzz_SWGL_JKJO.pk3`, `SWGL/SWGL_*.pk3` et `SWGL/*.dll`. Pour faire disparaître autre
+chose, par exemple une map ou une config qu'une ancienne version a laissée, on le marque sur la
+branche concernée, `public` ou un code de beta :
+
+```bash
+sudo swgl-sync force-delete public "SWGL/maps/old_*.bsp" SWGL/readme.txt
+sudo swgl-sync force-delete public           # affiche la liste
+sudo swgl-sync cancel-delete public SWGL/readme.txt
+sudo swgl-sync update public                 # applique
+```
+
+La liste est stockée dans `/srv/swgl/forcedelete-<branche>.list`. `update` l'inscrit dans le
+manifeste (clé `delete`), et le launcher supprime alors ces fichiers chez le joueur. Il le fait
+à chaque mise à jour : un fichier supprimé qui réapparaît est de nouveau supprimé, tant que le
+motif reste dans la liste.
+
+Deux garde-fous, côté launcher : un fichier que le canal publie n'est jamais supprimé (l'outil
+de manifeste le signale), et le launcher, sa configuration et son état non plus. En dehors de
+ça, un motif trop large supprime tout ce qu'il couvre : `base/**` viderait le `base` de Jedi
+Academy chez tous les joueurs. Il faut préférer des chemins exacts.
+
+Cette fonction demande un `SWGLManifest` et un launcher récents : l'ancien outil répond
+`Argument inconnu : --delete-list`, et un ancien launcher ignore la clé `delete`.
+
 ### Mettre à jour `base`
 
 Chaque manifeste de beta embarque aussi les fichiers de `base`, avec leur empreinte. Après une
@@ -227,6 +259,36 @@ le rappelle quand on ne met à jour que le public.
 
 Chaque beta re-hache les 15 Go de `base` : avec plusieurs betas ouvertes, la mise à jour
 complète prend quelques minutes par branche.
+
+### Notes de version
+
+Chaque branche a son fichier Markdown à la racine du dépôt : `patchnotes-public.md`,
+`patchnotes-elween.md`… Chaque compte le voit en `/patchnotes.md`. Le launcher le lit avec le
+manifeste et, s'il n'est pas vide, affiche un lien *Patch notes* à droite de la version.
+
+Pour publier ou corriger des notes, il suffit de déposer le fichier par FTP avec `swgl-dev` :
+pas besoin de `swgl-sync update`, le launcher le relit à chaque vérification. Pour retirer les
+notes, on vide le fichier. Il ne faut pas le supprimer : l'alias FTP pointe dessus.
+
+`swgl-sync` crée ces fichiers vides : `create` pour une nouvelle beta, `update` pour le public
+et pour chaque beta. Une beta créée avant l'ajout des notes reçoit son alias au prochain
+`swgl-sync update <code>`.
+
+Le HTML brut est ignoré à l'affichage, et les liens s'ouvrent dans le navigateur du joueur.
+
+Sur un serveur installé avant l'ajout des notes, le public a besoin de son alias, à ajouter
+une seule fois dans le bloc `<IfUser swgl-public>` de `/etc/proftpd/conf.d/swgl.conf` :
+
+```
+    VRootAlias        /srv/swgl/patchnotes-public.md patchnotes.md
+```
+
+puis :
+
+```bash
+sudo install -o swgl-dev -g swgl -m 644 /dev/null /srv/swgl/patchnotes-public.md
+sudo proftpd --configtest && sudo systemctl reload proftpd
+```
 
 ### `swgl-sync` pour `swgl-dev`, en SSH
 
@@ -325,6 +387,7 @@ ftp.public.user=swgl-public
 ftp.public.password=swgl-public
 ftp.beta.user.prefix=swgl-
 manifest.file=/manifest.json
+patchnotes.file=/patchnotes.md
 ```
 
 Tous les canaux partageant la même vue, les chemins d'un manifeste sont les mêmes partout :

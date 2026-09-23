@@ -42,7 +42,7 @@ namespace SWGLLauncher.ManifestTool
             var stopwatch = Stopwatch.StartNew();
             var entries = new Dictionary<string, ManifestEntry>(StringComparer.OrdinalIgnoreCase);
 
-            string[] removals = LoadRemoveList(options.RemoveList);
+            string[] removals = LoadPatternList(options.RemoveList, "Liste de retrait");
             bool[] removalUsed = new bool[removals.Length];
 
             // Le dossier commun d'abord : les fichiers de la beta l'emportent ensuite.
@@ -66,6 +66,20 @@ namespace SWGLLauncher.ManifestTool
 
             manifest.Files = [.. entries.Values.OrderBy(e => e.Path, StringComparer.OrdinalIgnoreCase)];
 
+            // Fichiers que le launcher doit supprimer chez le joueur, hors de ses propres motifs.
+            manifest.Delete = [.. LoadPatternList(options.DeleteList, "Liste de suppression")];
+
+            // Le launcher ne supprime jamais un fichier publie : le motif serait sans effet.
+            foreach (string pattern in manifest.Delete)
+            {
+                foreach (ManifestEntry published in manifest.Files.Where(
+                    file => ManifestService.MatchesPattern(file.Path, pattern)))
+                {
+                    Console.Error.WriteLine(
+                        $"Attention : {published.Path} est publie par ce canal, \"{pattern}\" ne le supprimera pas.");
+                }
+            }
+
             File.WriteAllText(options.Output, ManifestService.Serialize(manifest));
 
             long total = manifest.Files.Sum(file => file.Size);
@@ -73,6 +87,12 @@ namespace SWGLLauncher.ManifestTool
             Console.WriteLine($"Canal    : {manifest.Channel}");
             Console.WriteLine($"Version  : {manifest.Version}");
             Console.WriteLine($"Fichiers : {manifest.Files.Count} ({FormatSize(total)})");
+
+            if (manifest.Delete.Count > 0)
+            {
+                Console.WriteLine($"A supprimer chez le joueur : {string.Join(", ", manifest.Delete)}");
+            }
+
             Console.WriteLine($"Duree    : {stopwatch.Elapsed:mm\\:ss}");
             Console.WriteLine($"Ecrit    : {options.Output}");
 
@@ -80,10 +100,10 @@ namespace SWGLLauncher.ManifestTool
         }
 
         /// <summary>
-        /// Lit la liste des fichiers de base a retirer : un chemin ou un motif par ligne,
-        /// lignes vides et commentaires "#" ignores.
+        /// Lit une liste de chemins : un chemin ou un motif par ligne, lignes vides et
+        /// commentaires "#" ignores.
         /// </summary>
-        private static string[] LoadRemoveList(string? path)
+        private static string[] LoadPatternList(string? path, string description)
         {
             if (path is null)
             {
@@ -92,7 +112,7 @@ namespace SWGLLauncher.ManifestTool
 
             if (!File.Exists(path))
             {
-                throw new ArgumentException($"Liste de retrait introuvable : {path}");
+                throw new ArgumentException($"{description} introuvable : {path}");
             }
 
             return [.. File.ReadAllLines(path)
@@ -223,6 +243,7 @@ namespace SWGLLauncher.ManifestTool
             public string Output { get; private set; } = string.Empty;
             public List<string> Exclude { get; } = [];
             public string? RemoveList { get; private set; }
+            public string? DeleteList { get; private set; }
 
             public static Options Parse(string[] args)
             {
@@ -258,6 +279,7 @@ namespace SWGLLauncher.ManifestTool
                         case "--output": options.Output = Next(); break;
                         case "--exclude": options.Exclude.Add(Next()); break;
                         case "--remove-list": options.RemoveList = Next(); break;
+                        case "--delete-list": options.DeleteList = Next(); break;
                         default: throw new ArgumentException($"Argument inconnu : {key}");
                     }
                 }
@@ -291,6 +313,8 @@ namespace SWGLLauncher.ManifestTool
                       --exclude <fragment>       Exclut les chemins contenant ce fragment
                       --remove-list <fichier>    Fichiers de --base a retirer : un chemin ou un
                                                  motif par ligne ("*" dans un dossier, "**" au-dela)
+                      --delete-list <fichier>    Fichiers a supprimer chez le joueur meme hors des
+                                                 motifs du launcher, meme format
 
                     Exemples :
                       SWGLManifest --source C:\ftp\public --channel public

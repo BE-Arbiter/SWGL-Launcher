@@ -31,14 +31,20 @@ Claims below were checked by running code, not by inspection alone.
   rather than duplicating, artwork written under the names Steam expects.
 - **Jedi Outcast import** — all four folder-resolution cases, three files copied with matching
   SHA-256, no leftover `.part`, re-import overwriting cleanly.
-- **Cleanup** — planning verified on a synthetic install: stray folders and obsolete `.pk3`
-  removed, stock game files, `base/`, saves, player configuration and launcher files kept.
+- **Cleanup** — planning verified on a synthetic install: only obsolete files matching
+  `sync.deletable` removed (case-insensitive, `*` not crossing folders); stock game files, other
+  `base/` files, other mods, saves, `.part` files and launcher files kept. Forced
+  deletions from the manifest's `delete` list applied, except to a file the channel still
+  publishes or to a protected launcher file; old manifests without the key still load.
 - **Packaging** — published executable launched from a folder containing nothing but itself
   and `SWGL\launcher_music.mp3`, without any configuration file: window, embedded background and
   music all load.
 - **Automatic recovery** — the test server was made to stall halfway through a transfer: the
   launcher hit the read timeout, reconnected, resumed at the right offset (`REST 100000`) and
   finished with a correct checksum.
+- **Patch notes** — end to end against the test FTP server: notes read after the manifest,
+  link shown, two clicks open a single window, Markdown rendered (headings, lists, code,
+  quote, table, link), a `<script>` in the notes shown as text and never run.
 - **Log panel** — rendered off-screen after a failed login, opened automatically with the
   error and its cause; beta passwords confirmed masked, including in verbose FTP logging.
 
@@ -56,7 +62,9 @@ Claims below were checked by running code, not by inspection alone.
 
 ## What was not verified
 
-- **`server/swgl-sync`**: `update`, `exclude` and `restore` were tested with a stubbed manifest tool (branch discovery, arguments, list handling, path validation, exit codes), and `--remove-list` in the manifest tool on a real folder; `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
+- **`server/swgl-sync`**: `update`, `exclude`, `restore`, `force-delete` and `cancel-delete` were tested with a stubbed manifest tool (branch discovery, arguments, list handling, path validation, exit codes), and `--remove-list` in the manifest tool on a real folder; `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
+- **Patch notes on the real server**: the `VRootAlias` to `/patchnotes.md` and its backfill in
+  `swgl-sync update` were checked on a copy of the configuration, not against ProFTPD.
 - **Steam library rendering.** Artwork file names and the `shortcuts.vdf` format were verified,
   but no shortcut was ever written to a live Steam profile.
 - **Interface rendering on other DPI settings.** The window was checked at 100 % only.
@@ -65,9 +73,9 @@ Claims below were checked by running code, not by inspection alone.
 
 - The launcher lives inside the folder it synchronises, so it cannot update itself: a
   `SWGLLauncher.exe` listed in a manifest would fail to be replaced while running.
-- The cleanup deletes files. Its protection list (`sync.keep`) is a plain list of names and
-  patterns — an install that does not match the expected layout should be checked with
-  *Check integrity* before the first update.
+- The cleanup deletes files matching `sync.deletable`. A file the mod ships outside those
+  patterns is only cleaned up if the channel forces it with `swgl-sync force-delete`; a broad
+  forced pattern deletes everything it covers.
 
 ## Model
 

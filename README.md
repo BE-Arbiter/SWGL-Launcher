@@ -18,10 +18,12 @@ channel or on a private beta channel, then starts the game. It ships as a single
 - **Resumable downloads,** verified by checksum, written through a temporary file so an
   interrupted transfer never leaves a truncated `.pk3` behind. A transfer cut by the network
   reconnects and resumes on its own, up to three times.
+- **Patch notes**: when a channel publishes Markdown notes, a *Patch notes* link appears next
+  to the version and opens them in their own window.
 - **Log panel** listing every step, download and error — opened with the `»` button, and
   automatically when something fails.
-- **Cleanup** of files that do not belong to the channel, with the stock game files, the
-  `base` folder and the player's saves left alone.
+- **Cleanup** of the mod's own files that the channel no longer ships; nothing else in the
+  game folder is deleted unless the channel explicitly asks for it.
 - **Jedi Outcast asset import**, for the mod's JO-derived missions.
 - **Steam integration**: adds the launcher to the Steam library as a non-Steam game, with
   library artwork.
@@ -59,6 +61,9 @@ At the bottom left, **Options** opens upward:
 | **Configure Steam launcher...** | Add the launcher to the Steam library, artwork included. |
 | **Check integrity** | Re-check every checksum and report what differs, without downloading. |
 
+When the channel has patch notes, a *Patch notes* link sits at the right end of the status
+line; it opens a single window, brought back to the front if clicked again.
+
 At the bottom right, **Update** brings the installation in line with the channel. **Start** launches the game. During an operation *Update* becomes
 *Cancel* and *Start* is disabled.
 
@@ -77,7 +82,7 @@ Paths are relative to the executable or absolute; colours are `#RRGGBB` or `#AAR
 | `sync.enabled`, `sync.check.on.start` | Updates; the check on start downloads nothing. |
 | `install.path` | Folder to synchronise. `.` means the launcher's own folder. |
 | `state.file` | Local state written by the launcher. |
-| `sync.remove.unknown`, `sync.keep` | Cleanup — see below. |
+| `sync.deletable` | The only files the cleanup may delete — see below. |
 | `sync.download.retries` | Automatic retries of an interrupted download, each resuming where it stopped. |
 | `ftp.host`, `ftp.port`, `ftp.tls`, `ftp.accept.any.certificate`, `ftp.timeout.ms` | Connection. `explicit` means FTPS on port 21. |
 | `ftp.noop.interval.ms` | Keeps the control connection alive during long transfers; `0` turns it off. |
@@ -85,6 +90,7 @@ Paths are relative to the executable or absolute; colours are `#RRGGBB` or `#AAR
 | `ftp.public.user`, `ftp.public.password` | Public channel account. |
 | `ftp.beta.user.prefix` | Beta account is `<prefix><code>`, password is the code. |
 | `manifest.file` | Manifest path on the server, same for every channel. |
+| `patchnotes.file` | Patch notes path on the server, same for every channel. |
 | `game.executable`, `game.arguments`, `game.close.launcher` | The **Start** button. |
 | `jo.path`, `steam.*` | Written by the Options menu. |
 | `beta.codes`, `channel.selected` | Written by the channel menu. |
@@ -117,18 +123,25 @@ forces a full pass.
 
 ### Cleanup
 
-With `sync.remove.unknown=true`, anything inside `install.path` that the manifest does not
-list is deleted — stale `.pk3` files, leftover folders, remains of an older install. Three
-things are never touched:
+The cleanup only ever deletes files the mod itself publishes, and only when the channel no
+longer lists them. `sync.deletable` names them; by default:
 
-- the patterns in `sync.keep`, which by default name the `base` folder and the stock Jedi
-  Academy files;
-- the launcher, its configuration and its state file;
-- an override dropped next to the executable, if there is one.
+| Pattern | Covers |
+| --- | --- |
+| `base/zzzzzzz_SWGL_JKJO.pk3` | The mod's only file in `base`; nothing else there is ever deleted. |
+| `SWGL/SWGL_*.pk3` | The mod's archives. |
+| `SWGL/*.dll` | The mod's game modules. |
 
-In `sync.keep`, `*` stays inside a folder and `**` crosses folders; entries are separated by
-commas. Empty folders are pruned afterwards. Setting `sync.remove.unknown=false` reverts to
-the cautious behaviour: only files the launcher installed itself are removed.
+Everything else in `install.path` is left alone, whatever it is: the stock game, other mods,
+saves, configuration, interrupted downloads (`.part`). In `sync.deletable`, `*` stays inside a
+folder and `**` crosses folders; entries are separated by commas. The launcher, its
+configuration, its state file and any override dropped next to it are never deleted, even if
+a pattern matches them.
+
+A file a channel ships outside these patterns stays in place when the channel drops it,
+unless the channel forces its deletion: the manifest's `delete` list adds paths or patterns
+for that channel, set on the server with `swgl-sync force-delete`. Files the channel still
+publishes, and the launcher's own files, are never deleted, whatever the list says.
 
 ## Publishing an update
 
@@ -148,11 +161,11 @@ SWGLManifest --source /srv/swgl/beta-elween --source-prefix /beta-elween \
              --output /srv/swgl/beta-elween/manifest.json
 ```
 
-`SWGLManifest --help` lists the remaining options (`--notes`, `--exclude`, `--remove-list` to drop shared files from a beta, ...).
+`SWGLManifest --help` lists the remaining options (`--notes`, `--exclude`, `--remove-list` to drop shared files from a beta, `--delete-list` to force deletions on players' installs, ...).
 
 Server side, [`server/README.md`](server/README.md) documents the ProFTPD setup: one
 read/write publishing account, one read-only public account, one account per beta seeing only
-the shared folder and its own build. `server/swgl-sync` creates and removes betas, removes shared files from a given beta, and regenerates every manifest in one command; `server/swgl-sync-ssh` gives the publishing account a `swgl-sync>` prompt over SSH and nothing else.
+the shared folder and its own build. `server/swgl-sync` creates and removes betas, removes shared files from a given beta, forces the deletion of stray files on players' installs, and regenerates every manifest in one command; `server/swgl-sync-ssh` gives the publishing account a `swgl-sync>` prompt over SSH and nothing else.
 
 ## Building from source
 

@@ -25,6 +25,14 @@ namespace SWGLLauncher
         /// <summary>Liste complete des fichiers geres par le launcher pour ce canal.</summary>
         [JsonPropertyName("files")]
         public List<ManifestEntry> Files { get; set; } = [];
+
+        /// <summary>
+        /// Fichiers a supprimer chez le joueur meme hors des motifs supprimables du launcher :
+        /// chemins ou motifs relatifs au dossier d'installation. Un fichier liste dans
+        /// <see cref="Files"/> n'est jamais supprime.
+        /// </summary>
+        [JsonPropertyName("delete")]
+        public List<string> Delete { get; set; } = [];
     }
 
     internal sealed class ManifestEntry

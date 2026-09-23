@@ -40,22 +40,17 @@ namespace SWGLLauncher
         public string BetaCode { get; init; } = string.Empty;
 
         /// <summary>
-        /// Vrai pour supprimer aussi les fichiers presents dans le dossier d'installation
-        /// mais absents du manifeste, meme si le launcher ne les a pas poses lui-meme.
-        /// </summary>
-        public bool RemoveUnknown { get; init; }
-
-        /// <summary>
         /// Chemins relatifs jamais supprimes, quoi qu'il arrive : l'executable du launcher,
         /// sa configuration, son etat, ses propres visuels.
         /// </summary>
         public IReadOnlyCollection<string> Protected { get; init; } = [];
 
         /// <summary>
-        /// Motifs de fichiers a conserver (sauvegardes, configuration du joueur...).
+        /// Seuls fichiers que le nettoyage peut supprimer, quand ils ne figurent pas au
+        /// manifeste : tout le reste du dossier d'installation est laisse en place.
         /// "*" ne traverse pas les dossiers, "**" si.
         /// </summary>
-        public IReadOnlyCollection<string> KeepPatterns { get; init; } = [];
+        public IReadOnlyCollection<string> DeletablePatterns { get; init; } = [];
 
         /// <summary>Journal des operations effectuees (suppressions, telechargements...).</summary>
         public Action<string>? Log { get; init; }
@@ -136,39 +131,24 @@ namespace SWGLLauncher
                 }
             }
 
-            var removals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Nettoyage : seulement les fichiers supprimables absents du manifeste, qu'ils
+            // aient ete poses par le launcher ou non. Le manifeste peut en designer d'autres.
+            progress?.Report(new SyncProgress("Looking for obsolete files", _installRoot));
 
-            // Tout ce que le launcher avait installe et qui ne fait plus partie du canal.
-            foreach (InstalledEntry installed in state.Files)
-            {
-                if (!manifestPaths.Contains(installed.Path) && !IsProtected(installed.Path))
-                {
-                    removals.Add(installed.Path);
-                }
-            }
+            plan.Delete.AddRange(FindObsoleteFiles(manifestPaths, manifest.Delete, cancellationToken)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase));
 
-            // Nettoyage complet : tout ce qui traine dans le dossier d'installation sans
-            // figurer au manifeste, meme si le launcher ne l'a pas pose.
-            if (RemoveUnknown)
-            {
-                progress?.Report(new SyncProgress("Looking for extra files", _installRoot));
-
-                foreach (string path in FindUnknownFiles(manifestPaths, cancellationToken))
-                {
-                    removals.Add(path);
-                }
-            }
-
-            plan.Delete.AddRange(removals.OrderBy(path => path, StringComparer.OrdinalIgnoreCase));
             return plan;
         }
 
         /// <summary>
-        /// Parcourt le dossier d'installation et retient ce qui n'appartient ni au manifeste
-        /// ni a la liste de protection.
+        /// Parcourt le dossier d'installation et retient les fichiers supprimables qui
+        /// n'appartiennent pas au manifeste.
         /// </summary>
-        private IEnumerable<string> FindUnknownFiles(
-            HashSet<string> manifestPaths, CancellationToken cancellationToken)
+        private IEnumerable<string> FindObsoleteFiles(
+            HashSet<string> manifestPaths,
+            IReadOnlyCollection<string> forcedPatterns,
+            CancellationToken cancellationToken)
         {
             if (!Directory.Exists(_installRoot))
             {
@@ -183,45 +163,28 @@ namespace SWGLLauncher
                 string relative = ManifestService.NormalizeRelativePath(
                     Path.GetRelativePath(_installRoot, file));
 
-                if (relative.Length == 0
-                    || manifestPaths.Contains(relative)
-                    || IsProtected(relative))
+                if (relative.Length > 0
+                    && !manifestPaths.Contains(relative)
+                    && IsDeletable(relative, forcedPatterns))
                 {
-                    continue;
+                    yield return relative;
                 }
-
-                // Telechargement interrompu d'un fichier toujours au manifeste : il sera
-                // repris, surtout pas efface — sinon la reprise repartirait de zero.
-                if (relative.EndsWith(PartialSuffix, StringComparison.OrdinalIgnoreCase)
-                    && manifestPaths.Contains(relative[..^PartialSuffix.Length]))
-                {
-                    continue;
-                }
-
-                yield return relative;
             }
         }
 
-        /// <summary>Vrai si le chemin est explicitement protege ou couvert par un motif.</summary>
-        private bool IsProtected(string relativePath)
+        /// <summary>
+        /// Vrai si le chemin est couvert par un motif supprimable, ou par un motif que le
+        /// manifeste impose, et n'est pas protege.
+        /// </summary>
+        private bool IsDeletable(string relativePath, IReadOnlyCollection<string> forcedPatterns)
         {
-            foreach (string kept in Protected)
+            if (Protected.Contains(relativePath, StringComparer.OrdinalIgnoreCase))
             {
-                if (relativePath.Equals(kept, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                return false;
             }
 
-            foreach (string pattern in KeepPatterns)
-            {
-                if (ManifestService.MatchesPattern(relativePath, pattern))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return DeletablePatterns.Concat(forcedPatterns)
+                .Any(pattern => ManifestService.MatchesPattern(relativePath, pattern));
         }
 
         /// <summary>
@@ -247,11 +210,6 @@ namespace SWGLLauncher
                 {
                     Log?.Invoke($"Removed {path}");
                 }
-            }
-
-            if (plan.Delete.Count > 0)
-            {
-                RemoveEmptyDirectories(_installRoot);
             }
 
             SaveState(manifest, installed);
@@ -447,31 +405,6 @@ namespace SWGLLauncher
                 // il sera retente au prochain passage.
                 Log?.Invoke($"Could not remove {relativePath}: {exception.Message}");
                 return false;
-            }
-        }
-
-        /// <summary>
-        /// Supprime les dossiers devenus vides apres un nettoyage. Le dossier
-        /// d'installation lui-meme est evidemment conserve.
-        /// </summary>
-        private static void RemoveEmptyDirectories(string root)
-        {
-            foreach (string directory in Directory.EnumerateDirectories(root))
-            {
-                RemoveEmptyDirectories(directory);
-
-                try
-                {
-                    if (!Directory.EnumerateFileSystemEntries(directory).Any())
-                    {
-                        Directory.Delete(directory);
-                    }
-                }
-                catch (Exception exception) when (
-                    exception is IOException or UnauthorizedAccessException)
-                {
-                    // Dossier verrouille ou refuse : on le laisse en place.
-                }
             }
         }
 

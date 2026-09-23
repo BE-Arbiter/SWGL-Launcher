@@ -36,6 +36,7 @@ namespace SWGLLauncher
             btnLog = new TitleBarButton();
             pnlLog = new Panel();
             txtLog = new TextBox();
+            lnkPatchNotes = new LinkLabel();
             pnlLog.SuspendLayout();
             SuspendLayout();
             //
@@ -70,6 +71,21 @@ namespace SWGLLauncher
             txtLog.ReadOnly = true;
             txtLog.ScrollBars = ScrollBars.Vertical;
             txtLog.TabStop = false;
+            //
+            // lnkPatchNotes
+            //
+            lnkPatchNotes.AutoSize = false;
+            lnkPatchNotes.BackColor = Color.Transparent;
+            lnkPatchNotes.Font = new Font("Segoe UI", 9F);
+            lnkPatchNotes.LinkBehavior = LinkBehavior.HoverUnderline;
+            lnkPatchNotes.Name = "lnkPatchNotes";
+            lnkPatchNotes.Size = new Size(76, 18);
+            lnkPatchNotes.TabIndex = 8;
+            lnkPatchNotes.TabStop = true;
+            lnkPatchNotes.Text = "Patch notes";
+            lnkPatchNotes.TextAlign = ContentAlignment.MiddleRight;
+            lnkPatchNotes.Visible = false;
+            lnkPatchNotes.LinkClicked += LnkPatchNotes_LinkClicked;
             //
             // btnMusic
             //
@@ -129,6 +145,7 @@ namespace SWGLLauncher
             BackgroundImageLayout = ImageLayout.Stretch;
             ClientSize = new Size(960, 540);
             Controls.Add(pnlLog);
+            Controls.Add(lnkPatchNotes);
             Controls.Add(btnLog);
             Controls.Add(btnOptions);
             Controls.Add(btnUpdate);
@@ -160,5 +177,6 @@ namespace SWGLLauncher
         private TitleBarButton btnLog;
         private Panel pnlLog;
         private TextBox txtLog;
+        private LinkLabel lnkPatchNotes;
     }
 }

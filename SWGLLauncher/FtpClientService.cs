@@ -134,6 +134,31 @@ namespace SWGLLauncher
         }
 
         /// <summary>
+        /// Telecharge les notes de version du canal connecte. Null si le canal n'en a pas :
+        /// fichier absent ou vide.
+        /// </summary>
+        public async Task<string?> DownloadPatchNotesAsync(CancellationToken cancellationToken)
+        {
+            AsyncFtpClient client = RequireClient();
+            string remotePath = _config.GetString("patchnotes.file", "/patchnotes.md");
+
+            if (!await client.FileExists(remotePath, cancellationToken))
+            {
+                return null;
+            }
+
+            byte[]? content = await client.DownloadBytes(remotePath, cancellationToken);
+
+            if (content is null)
+            {
+                return null;
+            }
+
+            string text = System.Text.Encoding.UTF8.GetString(content).TrimStart('﻿');
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+
+        /// <summary>
         /// Telecharge un fichier, en reprenant un telechargement partiel si le fichier
         /// local existe deja (commande FTP REST).
         /// </summary>
