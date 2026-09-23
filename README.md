@@ -152,7 +152,7 @@ SWGLManifest --source /srv/swgl/beta-elween --source-prefix /beta-elween \
 
 Server side, [`server/README.md`](server/README.md) documents the ProFTPD setup: one
 read/write publishing account, one read-only public account, one account per beta seeing only
-the shared folder and its own build. `server/swgl-sync` creates and removes betas, removes shared files from a given beta, and regenerates every manifest in one command.
+the shared folder and its own build. `server/swgl-sync` creates and removes betas, removes shared files from a given beta, and regenerates every manifest in one command; `server/swgl-sync-ssh` gives the publishing account a `swgl-sync>` prompt over SSH and nothing else.
 
 ## Building from source
 
@@ -183,7 +183,7 @@ dotnet publish Tools/SWGLManifest/SWGLManifest.csproj -c Release -r linux-x64 \
 SWGLLauncher/            the launcher (WinForms, .NET 10)
   SWGL/                  artwork (embedded at build time) and music (shipped alongside)
 Tools/SWGLManifest/      manifest generator
-server/                  ProFTPD configuration and the swgl-sync tool
+server/                  ProFTPD, sshd and sudoers configuration, swgl-sync tools
 ```
 
 ## Known limitations

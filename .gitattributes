@@ -2,3 +2,5 @@
 # y compris dans une copie de travail Windows. Un CRLF casse bash.
 server/swgl-sync        text eol=lf
 server/*.conf           text eol=lf
+server/swgl-sync-ssh    text eol=lf
+server/sudoers-swgl-dev text eol=lf

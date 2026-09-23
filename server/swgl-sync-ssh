@@ -1,0 +1,43 @@
+#!/bin/bash
+# ==============================================================================
+# swgl-sync-ssh — the only thing swgl-dev can run over SSH (sshd ForceCommand).
+#
+#   ssh swgl-dev@server update          runs "swgl-sync update" and exits
+#   ssh swgl-dev@server                 swgl-sync> prompt
+#
+# A line is never interpreted by a shell: it is only split into words, with no
+# substitution and no pattern expansion, then handed to swgl-sync through sudo.
+# No line editing on purpose: bash's (read -e) has bindings that run commands.
+# ==============================================================================
+
+run() {
+    local args
+    read -ra args <<< "$1"
+    [[ "${args[0]:-}" == swgl-sync ]] && args=("${args[@]:1}")
+    sudo -n /usr/local/sbin/swgl-sync "${args[@]}"
+}
+
+if [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then
+    run "$SSH_ORIGINAL_COMMAND"
+    exit
+fi
+
+# Ctrl+C interrupts the running command without closing the session; Ctrl+D or
+# "exit" close it.
+trap 'echo' INT
+echo "swgl-sync - 'help' for usage, 'exit' to quit"
+
+while true; do
+    if ! read -rp 'swgl-sync> ' line; then
+        (( $? > 128 )) && continue
+        echo
+        break
+    fi
+
+    case "$line" in
+        "")        ;;
+        exit|quit) break ;;
+        help)      run "" ;;
+        *)         run "$line" ;;
+    esac
+done

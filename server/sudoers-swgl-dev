@@ -1,0 +1,2 @@
+# /etc/sudoers.d/swgl-dev — swgl-dev may run swgl-sync as root, nothing else.
+swgl-dev ALL=(root) NOPASSWD: /usr/local/sbin/swgl-sync

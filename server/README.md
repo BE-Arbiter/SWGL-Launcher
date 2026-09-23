@@ -90,7 +90,7 @@ Auto-signé : le launcher est réglé pour l'accepter (`ftp.accept.any.certifica
 
 ```bash
 sudo useradd --home-dir /srv/swgl --no-create-home \
-             --shell /usr/sbin/nologin --gid swgl swgl-dev
+             --shell /bin/sh --gid swgl swgl-dev
 sudo passwd swgl-dev
 
 sudo useradd --home-dir /srv/swgl-jails/swgl-public --no-create-home \
@@ -101,6 +101,10 @@ sudo passwd swgl-public        # swgl-public
 `--home-dir` **est** la racine vue par le compte. Le mot de passe de `swgl-public` est
 embarqué dans le launcher, il est public de fait ; celui de `swgl-dev` ouvre l'écriture sur
 tout le dépôt et ne doit apparaître nulle part côté client.
+
+`swgl-dev` a `/bin/sh` et non `nologin` pour pouvoir lancer `swgl-sync` en SSH (section 8) ;
+sshd ne lui laisse de toute façon aucun shell. Pas `/bin/bash` : bash lit le `.bashrc` du
+dossier personnel quand sshd le lance, et ce dossier, `/srv/swgl`, est modifiable par FTP.
 
 ## 5. Droits
 
@@ -198,8 +202,9 @@ sudo swgl-sync restore elween SWGL/SWGL_Missions_Ep8.pk3
 sudo swgl-sync update  elween          # applique
 ```
 
-Les chemins sont relatifs au GameData. `*` reste dans un dossier, `**` le traverse ; un motif
-se met entre guillemets pour que le shell ne l'interprète pas. La liste est stockée dans
+Les chemins sont relatifs au GameData. `*` reste dans un dossier, `**` le traverse ; dans un
+shell, un motif se met entre guillemets pour que le shell ne l'interprète pas, à l'invite
+`swgl-sync>` il se tape tel quel. La liste est stockée dans
 `/srv/swgl/beta-elween.remove`, hors du dossier de la beta : ni publiée, ni visible des
 testeurs.
 
@@ -222,6 +227,56 @@ le rappelle quand on ne met à jour que le public.
 
 Chaque beta re-hache les 15 Go de `base` : avec plusieurs betas ouvertes, la mise à jour
 complète prend quelques minutes par branche.
+
+### `swgl-sync` pour `swgl-dev`, en SSH
+
+`swgl-dev` peut lancer `swgl-sync` en SSH, et rien d'autre : ni shell, ni SFTP/SCP, ni
+tunnel. Il s'identifie avec le même mot de passe que pour le FTP.
+
+```bash
+BASE=https://raw.githubusercontent.com/BE-Arbiter/SWGL-Launcher/main/server
+sudo curl -fsSLo /usr/local/sbin/swgl-sync-ssh "$BASE/swgl-sync-ssh"
+sudo chmod 755 /usr/local/sbin/swgl-sync-ssh
+
+sudo curl -fsSLo /etc/sudoers.d/swgl-dev "$BASE/sudoers-swgl-dev"
+sudo chmod 440 /etc/sudoers.d/swgl-dev
+sudo visudo -c
+
+sudo curl -fsSLo /etc/ssh/sshd_config.d/swgl-dev.conf "$BASE/sshd-swgl-dev.conf"
+sudo sshd -t && sudo systemctl restart ssh
+```
+
+Une session SSH ouverte sans commande donne l'invite `swgl-sync>` ; avec une commande, elle
+l'exécute et se ferme :
+
+```bash
+ssh swgl-dev@vps-c2b14a7e.vps.ovh.net update elween
+```
+
+Le `swgl-sync` devant la commande est facultatif. Une ligne n'est jamais interprétée par un
+shell, seulement découpée en mots : `$(...)`, `;` ou `*` restent du texte, et un chemin ne
+peut pas contenir d'espace. Ctrl+C interrompt la commande en cours, `exit` ou Ctrl+D ferment
+la session. Dans MobaXterm, *Advanced SSH settings → Execute command* permet d'enregistrer
+une session par commande courante.
+
+Ce qui tient le verrou :
+
+- `ForceCommand` : quoi que demande le client, sshd lance `swgl-sync-ssh` ;
+- sudoers : `swgl-dev` n'obtient root que pour `/usr/local/sbin/swgl-sync`, et sudo remet
+  l'environnement à zéro (pas de `MANIFEST_TOOL` ni de `PATH` injectés) ;
+- `swgl-sync` et `swgl-sync-ssh` appartiennent à root : `swgl-dev` ne peut pas les modifier ;
+- `/bin/sh` comme shell et `AuthorizedKeysFile none` : rien de ce que `swgl-dev` dépose par
+  FTP dans `/srv/swgl` n'est lu par sshd.
+
+Pour passer aux clés plus tard : déposer la clé publique dans
+`/etc/ssh/authorized_keys/swgl-dev` (root, 644), remplacer `none` par
+`/etc/ssh/authorized_keys/%u` et ajouter `AuthenticationMethods publickey` dans le bloc.
+
+Vérifier que la config est appliquée :
+
+```bash
+sudo sshd -T -C user=swgl-dev,host=test,addr=127.0.0.1 | grep -Ei "forcecommand|permittty|disableforwarding"
+```
 
 ## 9. Vérifier
 

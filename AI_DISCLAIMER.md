@@ -50,6 +50,9 @@ Claims below were checked by running code, not by inspection alone.
 - **The ProFTPD configuration** was applied on the target Ubuntu 24.04 machine. Two directives
   failed with Ubuntu's packaging and were fixed afterwards: `mod_tls` ships in
   `proftpd-mod-crypto`, and `IdentLookups` needs a module that is not installed.
+- **SSH access for `swgl-dev`** (`swgl-sync-ssh`, sudoers, sshd block): applied on the server,
+  the `swgl-sync>` prompt works and no shell is reachable. The word splitting was also checked
+  locally: `$(...)`, `;` and `*` reach `swgl-sync` as plain text.
 
 ## What was not verified
 

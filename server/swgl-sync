@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# swgl-sync — gestion des branches du depot FTP SWGL : le public et les betas.
+# swgl-sync — manages the branches of the SWGL FTP repository: public and betas.
 #
-#   swgl-sync update                    regenere le public, puis toutes les betas
-#   swgl-sync update <branche> [ver]    regenere une branche : "public" ou un code
-#   swgl-sync create <code>             cree une beta
-#   swgl-sync remove <code>             ferme une beta (ses fichiers restent)
-#   swgl-sync exclude <code> [chemin]   retire des fichiers de base pour cette beta
-#   swgl-sync restore <code> <chemin>   annule un retrait
+#   swgl-sync update                    regenerate public, then every beta
+#   swgl-sync update <branch> [ver]     regenerate one branch: "public" or a code
+#   swgl-sync create <code>             create a beta
+#   swgl-sync remove <code>             close a beta (its files are kept)
+#   swgl-sync exclude <code> [path]     drop base files from this beta
+#   swgl-sync restore <code> <path>     undo an exclusion
 #
-# Une beta <code> donne le compte "swgl-<code>", mot de passe "<code>", qui voit
-# /base, /beta-<code>, /beta-<code>.diff et son /manifest.json.
+# Beta <code> gets the account "swgl-<code>", password "<code>", which sees
+# /base, /beta-<code>, /beta-<code>.diff and its own /manifest.json.
 # ==============================================================================
 set -euo pipefail
 
@@ -21,9 +21,9 @@ OWNER=swgl-dev
 BETAS_CONF=/etc/proftpd/conf.d/swgl-betas.conf
 MANIFEST_TOOL=${MANIFEST_TOOL:-SWGLManifest}
 
-# Prefixe des comptes : doit correspondre a ftp.beta.user.prefix du launcher.
+# Account prefix: must match the launcher's ftp.beta.user.prefix.
 USER_PREFIX=swgl-
-# Prefixe des dossiers et des .diff sur le disque.
+# Prefix of the beta folders and .diff files on disk.
 DIR_PREFIX=beta-
 PUBLIC=public
 
@@ -35,30 +35,31 @@ die() {
 usage() {
     cat >&2 <<EOF
 usage:
-  swgl-sync update                    public, puis toutes les betas
-  swgl-sync update <branche> [ver]    une branche : "$PUBLIC" ou un code de beta
-  swgl-sync create <code>             cree une beta
-  swgl-sync remove <code>             ferme une beta (ses fichiers restent)
-  swgl-sync exclude <code> [chemin]   retire des fichiers de base pour cette beta ;
-                                      sans chemin, affiche la liste
-  swgl-sync restore <code> <chemin>   annule un retrait
+  swgl-sync update                    public, then every beta
+  swgl-sync update <branch> [ver]     one branch: "$PUBLIC" or a beta code
+  swgl-sync create <code>             create a beta
+  swgl-sync remove <code>             close a beta (its files are kept)
+  swgl-sync exclude <code> [path]     drop base files from this beta;
+                                      without a path, show the list
+  swgl-sync restore <code> <path>     undo an exclusion
 
-Les chemins sont relatifs au GameData ("SWGL/SWGL_Menu.pk3"). "*" reste dans un
-dossier, "**" le traverse : mettre le motif entre guillemets.
+Paths are relative to GameData ("SWGL/SWGL_Menu.pk3"). "*" stays within a
+folder, "**" crosses folders. In a shell, quote patterns; at the swgl-sync>
+prompt, type them as is.
 EOF
     exit 1
 }
 
 check_code() {
-    [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]] || die "code invalide : $1"
-    [[ "$1" != "$PUBLIC" ]] || die "\"$PUBLIC\" est reserve au canal public"
+    [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid code: $1"
+    [[ "$1" != "$PUBLIC" ]] || die "\"$PUBLIC\" is reserved for the public channel"
 }
 
 reload_proftpd() {
     proftpd --configtest >/dev/null && systemctl reload proftpd
 }
 
-# Codes des betas existantes, d'apres les dossiers beta-<code> du depot.
+# Codes of the existing betas, from the beta-<code> folders of the repository.
 list_betas() {
     local dir
     for dir in "$ROOT/$DIR_PREFIX"*/; do
@@ -72,24 +73,24 @@ default_version() {
     date +%Y.%m.%d.%H%M
 }
 
-# Liste des fichiers de base retires d'une beta. A cote du .diff, hors du dossier
-# de la beta : ni scannee dans le manifeste, ni visible des testeurs.
+# List of base files excluded from a beta. Kept next to the .diff, outside the
+# beta folder: never scanned into the manifest, never visible to testers.
 remove_list() {
     echo "$ROOT/$DIR_PREFIX$1.remove"
 }
 
 require_beta() {
     check_code "$1"
-    [[ -d "$ROOT/$DIR_PREFIX$1" ]] || die "beta inconnue : $1 ($ROOT/$DIR_PREFIX$1 absent)"
+    [[ -d "$ROOT/$DIR_PREFIX$1" ]] || die "unknown beta: $1 ($ROOT/$DIR_PREFIX$1 missing)"
 }
 
-# Chemin relatif au GameData, separateurs "/", sans "/" initial ni remontee "..".
+# Path relative to GameData, "/" separators, no leading "/" and no "..".
 normalize_path() {
     local path=${1//\\//}
     path=${path#/}
 
-    [[ -n "$path" ]] || die "chemin vide"
-    [[ "/$path/" != */../* ]] || die "chemin refuse : $1"
+    [[ -n "$path" ]] || die "empty path"
+    [[ "/$path/" != */../* ]] || die "path rejected: $1"
 
     echo "$path"
 }
@@ -113,10 +114,10 @@ update_beta() {
     local version=${2:-$(default_version)}
     local home="$ROOT/$DIR_PREFIX$code"
 
-    [[ -d "$home" ]] || die "beta inconnue : $code ($home absent)"
+    [[ -d "$home" ]] || die "unknown beta: $code ($home missing)"
 
-    # Les fichiers de la beta l'emportent sur ceux de base au meme chemin, et ceux
-    # de la liste de retrait sont ecartes de base.
+    # The beta's own files win over base files at the same path, and the ones
+    # in the exclusion list are dropped from base.
     local removals=()
     local list
     list=$(remove_list "$code")
@@ -150,10 +151,10 @@ cmd_update() {
     if [[ "$branch" == "$PUBLIC" ]]; then
         update_public "$@"
 
-        # Chaque beta embarque les fichiers de base avec leur empreinte : si base a
-        # change, leurs manifestes sont perimes.
+        # Every beta manifest carries the base files with their checksums: if
+        # base changed, they are out of date.
         if [[ -n "$(list_betas)" ]]; then
-            echo "note : les betas embarquent base ; si base a change, 'swgl-sync update' les regenere aussi." >&2
+            echo "note: betas include base; if base changed, 'swgl-sync update' regenerates them too." >&2
         fi
     else
         check_code "$branch"
@@ -177,20 +178,20 @@ cmd_create() {
     local diff="$ROOT/$DIR_PREFIX$code.diff"
 
     if id "$user" &>/dev/null; then
-        die "le compte $user existe deja"
+        die "account $user already exists"
     fi
 
-    # Les fichiers de la beta appartiennent au compte de publication.
+    # Beta files belong to the publishing account.
     install -d -o "$OWNER" -g "$GROUP" -m 755 "$home"
     [[ -f "$diff" ]] || install -o "$OWNER" -g "$GROUP" -m 644 /dev/null "$diff"
 
-    # La prison est vide et appartient a root : rien ne peut y etre ecrit.
+    # The jail is empty and owned by root: nothing can be written to it.
     install -d -o root -g root -m 755 "$jail"
 
     useradd --home-dir "$jail" --no-create-home --shell /usr/sbin/nologin \
             --gid "$GROUP" "$user"
 
-    # Mot de passe = code : qui connait le code a de toute facon acces a la beta.
+    # Password = code: whoever knows the code has access to the beta anyway.
     echo "$user:$code" | chpasswd
 
     touch "$BETAS_CONF"
@@ -207,11 +208,11 @@ EOF
 
     reload_proftpd
 
-    echo "beta $code creee"
-    echo "  compte       : $user"
-    echo "  mot de passe : $code"
-    echo "  fichiers     : $home"
-    echo "  ensuite      : deposer les fichiers, puis 'swgl-sync update $code'"
+    echo "beta $code created"
+    echo "  account  : $user"
+    echo "  password : $code"
+    echo "  files    : $home"
+    echo "  next     : upload the files, then 'swgl-sync update $code'"
 }
 
 # ------------------------------------------------------------------------------
@@ -230,12 +231,12 @@ cmd_remove() {
     if id "$user" &>/dev/null; then
         userdel "$user"
     else
-        echo "  (compte $user deja absent)"
+        echo "  (account $user already gone)"
     fi
 
     rmdir "$jail" 2>/dev/null || true
 
-    # Retire le bloc <IfUser swgl-code>...</IfUser>.
+    # Drop the <IfUser swgl-code>...</IfUser> block.
     if [[ -f "$BETAS_CONF" ]]; then
         awk -v u="$user" '
             $0 == "<IfUser " u ">" { skip = 1 }
@@ -247,8 +248,8 @@ cmd_remove() {
 
     reload_proftpd
 
-    echo "beta $code fermee : compte et acces supprimes"
-    echo "  les fichiers restent : $ROOT/$DIR_PREFIX$code et $ROOT/$DIR_PREFIX$code.diff"
+    echo "beta $code closed: account and access removed"
+    echo "  files kept: $ROOT/$DIR_PREFIX$code and $ROOT/$DIR_PREFIX$code.diff"
 }
 
 # ------------------------------------------------------------------------------
@@ -265,13 +266,13 @@ cmd_exclude() {
     local list
     list=$(remove_list "$code")
 
-    # Sans chemin : affiche la liste.
+    # Without a path: show the list.
     if [[ $# -eq 0 ]]; then
         if [[ -s "$list" ]]; then
-            echo "fichiers de base retires de la beta $code :"
+            echo "base files excluded from beta $code:"
             sed 's/^/  /' "$list"
         else
-            echo "aucun fichier de base retire de la beta $code"
+            echo "no base file excluded from beta $code"
         fi
         return
     fi
@@ -285,20 +286,20 @@ cmd_exclude() {
         path=$(normalize_path "$path")
 
         if grep -Fxq -- "$path" "$list"; then
-            echo "  deja retire : $path"
+            echo "  already excluded: $path"
             continue
         fi
 
-        # Un chemin exact absent de base est presque toujours une faute de frappe.
+        # An exact path missing from base is almost always a typo.
         if [[ "$path" != *[*?]* && ! -e "$ROOT/base/$path" ]]; then
-            echo "  attention : $path n'existe pas dans base" >&2
+            echo "  warning: $path does not exist in base" >&2
         fi
 
         echo "$path" >> "$list"
-        echo "  retire : $path"
+        echo "  excluded: $path"
     done
 
-    echo "ensuite : swgl-sync update $code"
+    echo "next: swgl-sync update $code"
 }
 
 cmd_restore() {
@@ -310,29 +311,29 @@ cmd_restore() {
 
     local list
     list=$(remove_list "$code")
-    [[ -s "$list" ]] || die "aucun fichier de base retire de la beta $code"
+    [[ -s "$list" ]] || die "no base file excluded from beta $code"
 
     local path
     for path in "$@"; do
         path=$(normalize_path "$path")
 
         if grep -Fxq -- "$path" "$list"; then
-            # grep -v sort en erreur quand il ne reste plus aucune ligne : pas une erreur ici.
+            # grep -v fails when no line is left: not an error here.
             grep -Fxv -- "$path" "$list" > "$list.tmp" || true
             cat "$list.tmp" > "$list"
             rm -f "$list.tmp"
-            echo "  retabli : $path"
+            echo "  restored: $path"
         else
-            echo "  pas dans la liste : $path"
+            echo "  not in the list: $path"
         fi
     done
 
-    echo "ensuite : swgl-sync update $code"
+    echo "next: swgl-sync update $code"
 }
 
 # ------------------------------------------------------------------------------
 
-[[ $EUID -eq 0 ]] || die "a lancer en root (sudo)"
+[[ $EUID -eq 0 ]] || die "must be run as root (sudo)"
 
 case "${1:-}" in
     update)  shift; cmd_update "$@" ;;
