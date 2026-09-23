@@ -1,72 +1,218 @@
-#!/bin/bash
+#!/usr/bin/python3 -I
 # ==============================================================================
 # swgl-sync-ssh — the only thing swgl-dev can run over SSH (sshd ForceCommand).
 #
 #   ssh swgl-dev@server update          runs "swgl-sync update" and exits
 #   ssh swgl-dev@server                 swgl-sync> prompt
 #
-# A line is never interpreted by a shell: it is only split into words, quotes
-# grouping words ("Ep3 test 4"), with no substitution and no pattern expansion,
-# then handed to swgl-sync through sudo.
-# No line editing on purpose: bash's (read -e) has bindings that run commands.
+# The prompt has line editing, history (arrow keys, Ctrl+R) and Tab completion
+# of commands, branches and paths. A line is never interpreted by a shell: it is
+# split into words, quotes grouping words ("Ep3 test 4"), with no escapes, no
+# substitution and no pattern expansion, then handed to swgl-sync through sudo.
+#
+# Python rather than bash on purpose: bash's line editing (read -e) has key
+# bindings that run commands (edit-and-execute-command, shell-expand-line...).
+# GNU readline as used here only edits text.
 # ==============================================================================
+import os
+import shlex
+import signal
+import subprocess
+import sys
 
-# Splits a line into words. '...' and "..." group words and are removed; nothing
-# else is special: no escapes, no variables, no substitution, no patterns.
-split_words() {
-    local line=$1 word="" quote="" c i started=0
-    words=()
+SWGL_SYNC = "/usr/local/sbin/swgl-sync"
+ROOT = "/srv/swgl"
+PUBLIC = "public"
+DIR_PREFIX = "beta-"
 
-    for (( i = 0; i < ${#line}; i++ )); do
-        c=${line:i:1}
-
-        if [[ -n "$quote" ]]; then
-            if [[ "$c" == "$quote" ]]; then quote=""; else word+=$c; fi
-        elif [[ "$c" == "'" || "$c" == '"' ]]; then
-            quote=$c
-            started=1
-        elif [[ "$c" == [[:space:]] ]]; then
-            (( started )) && words+=("$word")
-            word=""
-            started=0
-        else
-            word+=$c
-            started=1
-        fi
-    done
-
-    (( started )) && words+=("$word")
-    return 0
+# Command -> what its first argument is: a branch, a beta, or nothing.
+COMMANDS = {
+    "update": "branch",
+    "rename": "branch",
+    "create": None,
+    "remove": "beta",
+    "exclude": "beta",
+    "restore": "beta",
+    "force-delete": "branch",
+    "cancel-delete": "branch",
+    "help": None,
+    "exit": None,
 }
 
-run() {
-    local words
-    split_words "$1"
-    [[ "${words[0]:-}" == swgl-sync ]] && words=("${words[@]:1}")
-    sudo -n /usr/local/sbin/swgl-sync "${words[@]}"
-}
 
-if [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then
-    run "$SSH_ORIGINAL_COMMAND"
-    exit
-fi
+def split_words(line):
+    """Words of a line: quotes group, nothing else is special."""
+    lexer = shlex.shlex(line, posix=True)
+    lexer.whitespace_split = True
+    lexer.escape = ""
+    lexer.commenters = ""
 
-# Ctrl+C interrupts the running command without closing the session; Ctrl+D or
-# "exit" close it.
-trap 'echo' INT
-echo "swgl-sync - 'help' for usage, 'exit' to quit"
+    try:
+        words = list(lexer)
+    except ValueError:
+        # Unclosed quote: take the rest of the line as typed.
+        words = line.replace('"', " ").replace("'", " ").split()
 
-while true; do
-    if ! read -rp 'swgl-sync> ' line; then
-        (( $? > 128 )) && continue
-        echo
-        break
-    fi
+    if words and words[0] == "swgl-sync":
+        words = words[1:]
 
-    case "$line" in
-        "")        ;;
-        exit|quit) break ;;
-        help)      run "" ;;
-        *)         run "$line" ;;
-    esac
-done
+    return words
+
+
+def run(words):
+    try:
+        return subprocess.call(["sudo", "-n", SWGL_SYNC, *words])
+    except KeyboardInterrupt:
+        return 130
+
+
+# ------------------------------------------------------------------------------
+# Completion
+# ------------------------------------------------------------------------------
+
+def betas():
+    try:
+        return sorted(
+            name[len(DIR_PREFIX):]
+            for name in os.listdir(ROOT)
+            if name.startswith(DIR_PREFIX) and os.path.isdir(os.path.join(ROOT, name))
+        )
+    except OSError:
+        return []
+
+
+def list_lines(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return [line.strip() for line in handle if line.strip()]
+    except OSError:
+        return []
+
+
+def paths_under(folder, prefix):
+    """Relative paths under a folder completing a prefix, folder by folder."""
+    head, _, tail = prefix.rpartition("/")
+    directory = os.path.join(folder, head) if head else folder
+
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return []
+
+    matches = []
+    for name in names:
+        if not name.startswith(tail):
+            continue
+
+        relative = f"{head}/{name}" if head else name
+        if os.path.isdir(os.path.join(directory, name)):
+            relative += "/"
+        matches.append(relative)
+
+    return matches
+
+
+def candidates(words, current):
+    """Possible values for the word being typed, given the words before it."""
+    if not words:
+        return [command for command in COMMANDS if command.startswith(current)]
+
+    command = words[0]
+    kind = COMMANDS.get(command)
+
+    if len(words) == 1:
+        if kind == "branch":
+            options = [PUBLIC, *betas()]
+        elif kind == "beta":
+            options = betas()
+        else:
+            options = []
+        return [option for option in options if option.startswith(current)]
+
+    branch = words[1]
+
+    if command == "exclude":
+        return paths_under(os.path.join(ROOT, "base"), current)
+
+    if command == "restore":
+        options = list_lines(os.path.join(ROOT, f"{DIR_PREFIX}{branch}.remove"))
+    elif command == "force-delete":
+        options = paths_under(os.path.join(ROOT, "base"), current)
+        if branch != PUBLIC:
+            options += paths_under(os.path.join(ROOT, f"{DIR_PREFIX}{branch}"), current)
+        return sorted(set(options))
+    elif command == "cancel-delete":
+        options = list_lines(os.path.join(ROOT, f"forcedelete-{branch}.list"))
+    else:
+        options = []
+
+    return [option for option in options if option.startswith(current)]
+
+
+def setup_readline():
+    # Never read an inputrc that swgl-dev could have written.
+    os.environ["INPUTRC"] = "/dev/null"
+
+    import readline
+
+    state = {"matches": []}
+
+    def complete(text, index):
+        if index == 0:
+            buffer = readline.get_line_buffer()[: readline.get_begidx()]
+            state["matches"] = candidates(split_words(buffer), text)
+        matches = state["matches"]
+        if index >= len(matches):
+            return None
+        match = matches[index]
+        # A folder is completed further, anything else ends the word.
+        return match if match.endswith("/") else match + " "
+
+    readline.set_completer(complete)
+    readline.set_completer_delims(" \t")
+    readline.parse_and_bind("tab: complete")
+    readline.parse_and_bind("set completion-ignore-case off")
+    readline.parse_and_bind("set show-all-if-ambiguous on")
+
+
+# ------------------------------------------------------------------------------
+
+def main():
+    command = os.environ.get("SSH_ORIGINAL_COMMAND", "").strip()
+
+    # ssh swgl-dev@server update: run and exit.
+    if command:
+        return run(split_words(command))
+
+    # Ctrl+C at the prompt clears the line; during a command it stops the command.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+
+    if sys.stdin.isatty():
+        setup_readline()
+
+    print("swgl-sync - Tab completes, arrows browse history; 'help' for usage, 'exit' to quit")
+
+    while True:
+        try:
+            line = input("swgl-sync> ")
+        except KeyboardInterrupt:
+            print()
+            continue
+        except EOFError:
+            print()
+            return 0
+
+        words = split_words(line)
+
+        if not words:
+            continue
+        if words[0] in ("exit", "quit"):
+            return 0
+        if words[0] == "help":
+            words = []
+
+        run(words)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

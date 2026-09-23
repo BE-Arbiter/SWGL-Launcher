@@ -65,8 +65,10 @@ Claims below were checked by running code, not by inspection alone.
 - **Release workflow**: the `v0.2.0-alpha` tag built and published the first release, with
   `SWGLLauncher.exe`, its SHA-256 digest, and `SWGLLauncher.zip`.
 - **SSH access for `swgl-dev`** (`swgl-sync-ssh`, sudoers, sshd block): applied on the server,
-  the `swgl-sync>` prompt works and no shell is reachable. The word splitting was also checked
-  locally: `$(...)`, `;` and `*` reach `swgl-sync` as plain text.
+  the `swgl-sync>` prompt works and no shell is reachable. The prompt was since rewritten in
+  Python for history and completion: word splitting, completion candidates and the command
+  loop were checked locally (`$(...)`, `;` and `*` reach `swgl-sync` as plain text), but the
+  line editing itself (arrow keys, Tab) only runs on the server and was not tried there yet.
 
 ## What was not verified
 

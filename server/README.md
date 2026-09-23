@@ -324,11 +324,21 @@ l'exécute et se ferme :
 ssh swgl-dev@vps-c2b14a7e.vps.ovh.net update elween
 ```
 
-Le `swgl-sync` devant la commande est facultatif. Une ligne n'est jamais interprétée par un
-shell, seulement découpée en mots : `$(...)`, `;` ou `*` restent du texte, et un chemin ne
-peut pas contenir d'espace. Ctrl+C interrompt la commande en cours, `exit` ou Ctrl+D ferment
-la session. Dans MobaXterm, *Advanced SSH settings → Execute command* permet d'enregistrer
-une session par commande courante.
+À l'invite, les flèches ↑/↓ parcourent l'historique de la session, ←/→ et Début/Fin
+éditent la ligne, Ctrl+R cherche dans l'historique, et Tab complète les commandes, les
+branches et les chemins (fichiers de `base` et de la beta, entrées des listes pour `restore`
+et `cancel-delete`). Le `swgl-sync` devant la commande est facultatif. Une ligne n'est jamais
+interprétée par un shell, seulement découpée en mots, les guillemets groupant des mots
+(`"Ep3 test 4"`) : `$(...)`, `;` ou `*` restent du texte. Ctrl+C interrompt la commande en
+cours ou efface la ligne, `exit` ou Ctrl+D ferment la session.
+
+Le script d'entrée est en Python 3, présent d'office sur Ubuntu (`python3 --version`). Pas en
+bash : l'édition de ligne de bash (`read -e`) garde des raccourcis qui exécutent des commandes
+(Ctrl+X Ctrl+E ouvre un éditeur puis exécute son contenu), une porte de sortie vers un shell.
+Celle de Python ne fait qu'éditer du texte, et le script ignore tout `.inputrc`.
+
+Dans MobaXterm, *Advanced SSH settings → Execute command* permet d'enregistrer une session
+par commande courante.
 
 Ce qui tient le verrou :
 
