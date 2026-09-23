@@ -22,3 +22,6 @@ installed.json
 ## OS
 Thumbs.db
 desktop.ini
+
+# Python bytecode (local tests of server scripts)
+__pycache__/
