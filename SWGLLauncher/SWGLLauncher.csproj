@@ -13,7 +13,7 @@
 
     <!-- Version du launcher, comparee au tag de la derniere release GitHub pour la mise
          a jour automatique. La GitHub Action la remplace par celle du tag publie. -->
-    <Version>0.3.0-beta</Version>
+    <Version>0.3.1-beta</Version>
 
     <!-- Un seul exe a la publication : runtime, dependances et symboles inclus,
          bibliotheques natives comprises. Seul SWGL\launcher_music.mp3 reste a cote. -->

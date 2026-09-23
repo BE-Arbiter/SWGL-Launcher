@@ -48,9 +48,12 @@ Claims below were checked by running code, not by inspection alone.
   link shown, two clicks open a single window, Markdown rendered (headings, lists, code,
   quote, table, link), a `<script>` in the notes shown as text and never run.
 - **Self-update** — a 1.0.0 build pointed at a local stand-in for the GitHub API found a 9.9.9
-  release, downloaded it, verified its SHA-256, swapped itself, restarted as 9.9.9 (which then
-  found itself up to date) and removed the old executable. With a wrong checksum, the download
-  was refused and 1.0.0 kept running untouched.
+  release, downloaded it, verified its SHA-256, handed over to it and exited cleanly; 9.9.9 copied
+  itself in place, restarted, found itself up to date and removed the `.new`. With a wrong
+  checksum, the download was refused and 1.0.0 kept running untouched. The first design renamed
+  the running executable instead: it passed that same local test, but failed against the real
+  `v0.3.0-beta` release (the renamed single-file executable could no longer load its own
+  assemblies and crashed before restarting), which led to the current design.
 - **Log panel** — rendered off-screen after a failed login, opened automatically with the
   error and its cause; beta passwords confirmed masked, including in verbose FTP logging.
 

@@ -188,10 +188,12 @@ git push origin v0.3.0
 ```
 
 At startup, the launcher asks GitHub for the latest release. If its version is higher, it
-downloads `SWGLLauncher.exe`, checks its size and the SHA-256 GitHub publishes, renames
-itself to `SWGLLauncher.exe.old` — Windows allows renaming a running executable, not
-overwriting it — puts the new one in its place and restarts; the new instance deletes the
-`.old`. If anything fails, it carries on with the current version and says so in the log.
+downloads it as `SWGLLauncher.exe.new`, checks its size and the SHA-256 GitHub publishes,
+starts it with `--apply-update` and closes. The new version waits for the old one to exit,
+copies itself over `SWGLLauncher.exe`, starts it and exits; that instance deletes the `.new`.
+A running executable is never renamed or overwritten: a single-file .NET executable loads
+parts of itself on demand and crashes once its file has moved. If anything fails, the
+launcher carries on with the current version and says so in the log.
 
 Only the executable is updated. A local build carries the `<Version>` of the project file and replaces itself with any newer release: set `update.enabled=false` to test one.
 Debug builds never update themselves.

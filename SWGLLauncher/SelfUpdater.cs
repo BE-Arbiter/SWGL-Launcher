@@ -9,14 +9,15 @@ namespace SWGLLauncher
     internal sealed record LauncherRelease(Version Version, string Tag, string DownloadUrl, long Size, string Sha256);
 
     /// <summary>
-    /// Mise a jour du launcher lui-meme depuis les releases GitHub. Windows interdit
-    /// d'ecraser un executable en cours d'execution, mais pas de le renommer : l'ancien
-    /// exe devient "*.old", le nouveau prend sa place, puis le launcher se relance.
+    /// Mise a jour du launcher lui-meme depuis les releases GitHub. La nouvelle version est
+    /// telechargee en "*.new" puis lancee ; une fois l'ancienne fermee, elle se copie a sa
+    /// place et la relance.
     /// </summary>
     internal sealed class SelfUpdater
     {
         private const string OldSuffix = ".old";
         private const string NewSuffix = ".new";
+        private const string ApplyArgument = "--apply-update";
 
         private static readonly HttpClient Http = CreateClient();
 
@@ -104,15 +105,13 @@ namespace SWGLLauncher
         }
 
         /// <summary>
-        /// Telecharge la nouvelle version, verifie sa taille et son empreinte, puis la met a
-        /// la place de l'executable courant. En cas d'echec, l'executable d'origine reste.
+        /// Telecharge la nouvelle version a cote de l'executable ("*.new") et verifie sa
+        /// taille et son empreinte. L'executable en cours n'est pas touche.
         /// </summary>
-        public async Task InstallAsync(
+        public async Task DownloadAsync(
             LauncherRelease release, IProgress<double>? progress, CancellationToken cancellationToken)
         {
-            string executable = ExecutablePath;
-            string downloaded = executable + NewSuffix;
-            string previous = executable + OldSuffix;
+            string downloaded = ExecutablePath + NewSuffix;
 
             try
             {
@@ -155,60 +154,112 @@ namespace SWGLLauncher
                 {
                     Log?.Invoke("No checksum published for this release: size check only");
                 }
-
-                // Renommer l'exe en cours est permis ; s'il reste un .old d'une mise a jour
-                // precedente encore verrouille, on abandonne proprement.
-                File.Move(executable, previous, overwrite: true);
-
-                try
-                {
-                    File.Move(downloaded, executable);
-                }
-                catch
-                {
-                    File.Move(previous, executable);
-                    throw;
-                }
             }
-            finally
+            catch
             {
                 TryDelete(downloaded);
+                throw;
             }
         }
 
-        /// <summary>Relance le launcher (la nouvelle version) avec les memes arguments.</summary>
-        public static void Restart()
+        /// <summary>
+        /// Lance la version telechargee pour qu'elle prenne la place de l'executable courant,
+        /// qui doit ensuite se fermer. On ne renomme ni n'ecrase jamais un executable en cours :
+        /// un exe "fichier unique" va chercher ses bibliotheques dans son propre fichier au fil
+        /// de l'eau, et plante des qu'il n'est plus a sa place.
+        /// </summary>
+        public static void StartInstaller()
         {
-            var start = new ProcessStartInfo(ExecutablePath)
+            var start = new ProcessStartInfo(ExecutablePath + NewSuffix)
             {
                 UseShellExecute = false,
                 WorkingDirectory = Environment.CurrentDirectory,
             };
 
-            foreach (string argument in Environment.GetCommandLineArgs().Skip(1))
-            {
-                start.ArgumentList.Add(argument);
-            }
+            start.ArgumentList.Add(ApplyArgument);
+            start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
             Process.Start(start);
         }
 
         /// <summary>
-        /// Supprime l'ancien executable laisse par une mise a jour. L'ancienne instance peut
-        /// mettre un instant a se fermer : quelques essais espaces.
+        /// Seconde moitie de la mise a jour, executee par "SWGLLauncher.exe.new --apply-update
+        /// &lt;pid&gt;" : attend la fermeture de l'ancienne version, se copie a sa place, la
+        /// relance et rend la main. Faux si le programme n'a pas ete lance ainsi.
+        /// </summary>
+        public static bool TryApplyUpdate(string[] args)
+        {
+            if (args.Length != 2 || args[0] != ApplyArgument)
+            {
+                return false;
+            }
+
+            string self = ExecutablePath;
+
+            // La cible se deduit de notre propre nom, jamais d'un argument : cette option ne
+            // peut ecraser que le launcher a cote duquel elle a ete telechargee.
+            if (!self.EndsWith(NewSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            string target = self[..^NewSuffix.Length];
+
+            if (int.TryParse(args[1], out int pid))
+            {
+                try
+                {
+                    using Process previous = Process.GetProcessById(pid);
+                    previous.WaitForExit(30_000);
+                }
+                catch (ArgumentException)
+                {
+                    // Deja fermee.
+                }
+            }
+
+            // L'antivirus peut garder la cible ouverte un instant apres la fermeture.
+            for (int attempt = 0; attempt < 20; attempt++)
+            {
+                try
+                {
+                    File.Copy(self, target, overwrite: true);
+                    break;
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    Thread.Sleep(500);
+                }
+            }
+
+            // Copie reussie ou non, on relance le launcher : au pire l'ancienne version, qui
+            // retentera la mise a jour au prochain demarrage.
+            Process.Start(new ProcessStartInfo(target)
+            {
+                UseShellExecute = false,
+                WorkingDirectory = Path.GetDirectoryName(target)!,
+            });
+
+            return true;
+        }
+
+        /// <summary>
+        /// Supprime les restes d'une mise a jour : le ".new" qui vient de se copier (il peut
+        /// mettre un instant a se fermer) et le ".old" des versions precedentes.
         /// </summary>
         public static async Task CleanUpAsync()
         {
-            string previous = ExecutablePath + OldSuffix;
-
-            for (int attempt = 0; attempt < 20 && File.Exists(previous); attempt++)
+            foreach (string leftover in new[] { ExecutablePath + NewSuffix, ExecutablePath + OldSuffix })
             {
-                if (TryDelete(previous))
+                for (int attempt = 0; attempt < 20 && File.Exists(leftover); attempt++)
                 {
-                    return;
-                }
+                    if (TryDelete(leftover))
+                    {
+                        break;
+                    }
 
-                await Task.Delay(500);
+                    await Task.Delay(500);
+                }
             }
         }
 

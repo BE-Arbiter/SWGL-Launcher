@@ -1004,10 +1004,10 @@ namespace SWGLLauncher
                     InvalidateStatusArea();
                 });
 
-                await updater.InstallAsync(release, progress, CancellationToken.None);
+                await updater.DownloadAsync(release, progress, CancellationToken.None);
 
-                Log("Launcher updated, restarting");
-                SelfUpdater.Restart();
+                Log("Launcher downloaded, restarting");
+                SelfUpdater.StartInstaller();
                 Close();
                 return true;
             }
