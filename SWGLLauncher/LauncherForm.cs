@@ -250,9 +250,18 @@ namespace SWGLLauncher
             _ = SetWindowTheme(txtLog.Handle, "DarkMode_Explorer", null);
         }
 
-        protected override void OnShown(EventArgs e)
+        protected override async void OnShown(EventArgs e)
         {
             base.OnShown(e);
+
+            Log($"Launcher {SelfUpdater.CurrentVersion}");
+            _ = SelfUpdater.CleanUpAsync();
+
+            // Une nouvelle version du launcher passe avant tout le reste : il se relance.
+            if (await UpdateLauncherAsync())
+            {
+                return;
+            }
 
             if (_musicEnabled)
             {
@@ -944,6 +953,81 @@ namespace SWGLLauncher
             InvalidateStatusArea();
 
             Log(detail.Length > 0 ? $"{status} — {detail}" : status);
+        }
+
+        // ------------------------------------------------------------------
+        // Mise a jour du launcher
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Installe la derniere version du launcher publiee sur GitHub, puis le relance.
+        /// Vrai si le launcher redemarre ; faux s'il est a jour ou si quoi que ce soit
+        /// echoue, auquel cas il continue avec la version actuelle.
+        /// </summary>
+        private async Task<bool> UpdateLauncherAsync()
+        {
+#if DEBUG
+            // Une compilation de developpement ne se remplace pas par la release publiee.
+            await Task.CompletedTask;
+            return false;
+#else
+            if (!_config.GetBool("update.enabled", true))
+            {
+                return false;
+            }
+
+            var updater = new SelfUpdater(_config) { Log = Log };
+            bool installing = false;
+
+            try
+            {
+                LauncherRelease? release = await updater.FindUpdateAsync(CancellationToken.None);
+
+                if (release is null)
+                {
+                    return false;
+                }
+
+                Log($"Launcher {release.Version} available, updating");
+                installing = true;
+
+                foreach (Control control in new Control[] { btnOptions, btnUpdate, btnStart })
+                {
+                    control.Enabled = false;
+                }
+
+                var progress = new Progress<double>(fraction =>
+                {
+                    _statusText = "Updating the launcher...";
+                    _detailText = $"{SelfUpdater.CurrentVersion} → {release.Version}";
+                    _progressFraction = fraction;
+                    InvalidateStatusArea();
+                });
+
+                await updater.InstallAsync(release, progress, CancellationToken.None);
+
+                Log("Launcher updated, restarting");
+                SelfUpdater.Restart();
+                Close();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                // Pas de reseau, GitHub injoignable, dossier en lecture seule... : on joue
+                // avec la version actuelle, l'erreur reste dans le journal.
+                Log($"Launcher update skipped: {exception.GetType().Name}: {exception.Message}");
+
+                if (installing)
+                {
+                    btnOptions.Enabled = true;
+                    btnStart.Enabled = true;
+                    btnUpdate.Enabled = SyncConfigured;
+                    SetStatus("Launcher update failed", "Continuing with the current version");
+                }
+
+                return false;
+            }
+#endif
         }
 
         // ------------------------------------------------------------------

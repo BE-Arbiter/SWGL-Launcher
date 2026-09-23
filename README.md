@@ -24,6 +24,8 @@ channel or on a private beta channel, then starts the game. It ships as a single
   automatically when something fails.
 - **Cleanup** of the mod's own files that the channel no longer ships; nothing else in the
   game folder is deleted unless the channel explicitly asks for it.
+- **Self-update** from GitHub releases: at startup the launcher installs the latest release
+  of itself and restarts.
 - **Jedi Outcast asset import**, for the mod's JO-derived missions.
 - **Steam integration**: adds the launcher to the Steam library as a non-Steam game, with
   library artwork.
@@ -94,6 +96,7 @@ Paths are relative to the executable or absolute; colours are `#RRGGBB` or `#AAR
 | `game.executable`, `game.arguments`, `game.close.launcher` | The **Start** button. |
 | `jo.path`, `steam.*` | Written by the Options menu. |
 | `beta.codes`, `channel.selected` | Written by the channel menu. |
+| `update.enabled`, `update.repository` | Self-update from the GitHub releases of this repository. |
 
 The background and the Steam artwork are embedded in the executable; the music ships next to
 it as `SWGL\launcher_music.mp3`. To replace an image without rebuilding, drop a file next to the
@@ -167,6 +170,27 @@ Server side, [`server/README.md`](server/README.md) documents the ProFTPD setup:
 read/write publishing account, one read-only public account, one account per beta seeing only
 the shared folder and its own build. `server/swgl-sync` creates and removes betas, removes shared files from a given beta, forces the deletion of stray files on players' installs, and regenerates every manifest in one command; `server/swgl-sync-ssh` gives the publishing account a `swgl-sync>` prompt over SSH and nothing else.
 
+## Releasing the launcher
+
+Push a version tag starting with `v` (`v1.2.0`, `v0.2.0-alpha`; a suffix after `-` is ignored when comparing versions); the `Release` workflow builds the launcher with that version and publishes
+a GitHub release with `SWGLLauncher.exe` (used by the self-update) and `SWGLLauncher.zip`
+(executable and `SWGL` folder, for new installs):
+
+```bash
+git tag v0.2.0-alpha
+git push origin v0.2.0-alpha
+```
+
+At startup, the launcher asks GitHub for the latest release. If its version is higher, it
+downloads `SWGLLauncher.exe`, checks its size and the SHA-256 GitHub publishes, renames
+itself to `SWGLLauncher.exe.old` — Windows allows renaming a running executable, not
+overwriting it — puts the new one in its place and restarts; the new instance deletes the
+`.old`. If anything fails, it carries on with the current version and says so in the log.
+
+Only the executable is updated. A local build carries the version of the project file
+(`0.2.0-alpha`) and replaces itself with any newer release: set `update.enabled=false` to test one.
+Debug builds never update themselves.
+
 ## Building from source
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download). Visual Studio 2026 opens
@@ -193,6 +217,7 @@ dotnet publish Tools/SWGLManifest/SWGLManifest.csproj -c Release -r linux-x64 \
 ## Repository layout
 
 ```
+.github/workflows/       release workflow (tag v* → GitHub release)
 SWGLLauncher/            the launcher (WinForms, .NET 10)
   SWGL/                  artwork (embedded at build time) and music (shipped alongside)
 Tools/SWGLManifest/      manifest generator
@@ -203,8 +228,8 @@ server/                  ProFTPD, sshd and sudoers configuration, swgl-sync tool
 
 - A `.pk3` is a monolithic zip: changing one texture in an 800 MB file means downloading the
   800 MB again. FTP cannot do deltas. Splitting large `.pk3` files is the only real answer.
-- The launcher lives in the folder it synchronises, so it cannot update itself — a
-  `SWGLLauncher.exe` listed in a manifest would fail to be replaced while running.
+- The launcher updates itself from GitHub releases only. A `SWGLLauncher.exe` listed in a
+  manifest would fail to be replaced while running.
 
 ## Maintainer
 

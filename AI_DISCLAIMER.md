@@ -45,6 +45,10 @@ Claims below were checked by running code, not by inspection alone.
 - **Patch notes** — end to end against the test FTP server: notes read after the manifest,
   link shown, two clicks open a single window, Markdown rendered (headings, lists, code,
   quote, table, link), a `<script>` in the notes shown as text and never run.
+- **Self-update** — a 1.0.0 build pointed at a local stand-in for the GitHub API found a 9.9.9
+  release, downloaded it, verified its SHA-256, swapped itself, restarted as 9.9.9 (which then
+  found itself up to date) and removed the old executable. With a wrong checksum, the download
+  was refused and 1.0.0 kept running untouched.
 - **Log panel** — rendered off-screen after a failed login, opened automatically with the
   error and its cause; beta passwords confirmed masked, including in verbose FTP logging.
 
@@ -71,8 +75,9 @@ Claims below were checked by running code, not by inspection alone.
 
 ## Known caveats
 
-- The launcher lives inside the folder it synchronises, so it cannot update itself: a
-  `SWGLLauncher.exe` listed in a manifest would fail to be replaced while running.
+- The launcher updates itself from GitHub releases only; a `SWGLLauncher.exe` listed in a
+  manifest would fail to be replaced while running. The release workflow has not run yet: its
+  first real run will be the first release.
 - The cleanup deletes files matching `sync.deletable`. A file the mod ships outside those
   patterns is only cleaned up if the channel forces it with `swgl-sync force-delete`; a broad
   forced pattern deletes everything it covers.
