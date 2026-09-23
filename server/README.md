@@ -158,7 +158,8 @@ pour le compiler en `linux-x64`).
 | Commande | Effet |
 | --- | --- |
 | `swgl-sync update` | Régénère le manifeste du public, puis celui de chaque beta. |
-| `swgl-sync update <branche> [version]` | Régénère une seule branche : `public` ou un code de beta. |
+| `swgl-sync update <branche> [libellé]` | Régénère une seule branche : `public` ou un code de beta. |
+| `swgl-sync rename <branche> <libellé>` | Change le libellé affiché aux joueurs, sans rien recalculer. |
 | `swgl-sync create <code>` | Crée une beta. |
 | `swgl-sync remove <code>` | Ferme une beta ; ses fichiers restent sur le disque. |
 | `swgl-sync exclude <code> [chemin...]` | Retire des fichiers de `base` pour cette beta ; sans chemin, affiche la liste. |
@@ -166,7 +167,9 @@ pour le compiler en `linux-x64`).
 | `swgl-sync force-delete <branche> [chemin...]` | Fait supprimer des fichiers chez les joueurs, hors des motifs du launcher ; sans chemin, affiche la liste. |
 | `swgl-sync cancel-delete <branche> <chemin...>` | Annule une suppression forcée. |
 
-Sans version, c'est la date du jour (`2026.09.22.2143`).
+Le libellé est la version affichée aux joueurs. Sans libellé, `update` garde celui déjà publié ;
+une branche qui n'en a encore aucun reçoit la date du jour (`2026.09.22.2143`). Un libellé peut
+contenir des espaces, sans guillemets : `swgl-sync rename elween Ep3 test 4`.
 
 ### Créer une beta
 
@@ -208,8 +211,9 @@ sudo swgl-sync update  elween          # applique
 ```
 
 Les chemins sont relatifs au GameData. `*` reste dans un dossier, `**` le traverse ; dans un
-shell, un motif se met entre guillemets pour que le shell ne l'interprète pas, à l'invite
-`swgl-sync>` il se tape tel quel. La liste est stockée dans
+shell, un motif se met entre guillemets pour que le shell ne l'interprète pas. À l'invite
+`swgl-sync>`, les guillemets sont acceptés mais inutiles, et ils ne finissent jamais dans la
+liste. La liste est stockée dans
 `/srv/swgl/beta-elween.remove`, hors du dossier de la beta : ni publiée, ni visible des
 testeurs.
 
@@ -225,10 +229,11 @@ Cette fonction demande un `SWGLManifest` récent (option `--remove-list`) : l'an
 
 ### Forcer la suppression de fichiers chez les joueurs
 
-Le launcher ne supprime que les fichiers du mod qu'un canal ne publie plus :
-`base/zzzzzzz_SWGL_JKJO.pk3`, `SWGL/SWGL_*.pk3` et `SWGL/*.dll`. Pour faire disparaître autre
-chose, par exemple une map ou une config qu'une ancienne version a laissée, on le marque sur la
-branche concernée, `public` ou un code de beta :
+Quand un canal ne publie plus un fichier, le launcher le supprime s'il l'avait lui-même installé
+(les fichiers d'une beta disparaissent au retour sur le public), ou s'il correspond à
+`base/zzzzzzz_SWGL_JKJO.pk3`, `SWGL/SWGL_*.pk3` ou `SWGL/*.dll`. Pour faire disparaître autre
+chose, par exemple une map ou une config qu'une ancienne version installée à la main a laissée,
+on le marque sur la branche concernée, `public` ou un code de beta :
 
 ```bash
 sudo swgl-sync force-delete public "SWGL/maps/old_*.bsp" SWGL/readme.txt
@@ -240,7 +245,10 @@ sudo swgl-sync update public                 # applique
 La liste est stockée dans `/srv/swgl/forcedelete-<branche>.list`. `update` l'inscrit dans le
 manifeste (clé `delete`), et le launcher supprime alors ces fichiers chez le joueur. Il le fait
 à chaque mise à jour : un fichier supprimé qui réapparaît est de nouveau supprimé, tant que le
-motif reste dans la liste.
+motif reste dans la liste. Les suppressions forcées du public valent aussi pour les betas.
+
+Un motif part de la racine du GameData : `*.cfg` ne couvre que les `.cfg` à la racine, et
+`SWGL/maps/*` ne descend pas dans les sous-dossiers de `maps` (il faut `SWGL/maps/**`).
 
 Deux garde-fous, côté launcher : un fichier que le canal publie n'est jamais supprimé (l'outil
 de manifeste le signale), et le launcher, sa configuration et son état non plus. En dehors de
@@ -252,13 +260,14 @@ Cette fonction demande un `SWGLManifest` et un launcher récents : l'ancien outi
 
 ### Mettre à jour `base`
 
-Chaque manifeste de beta embarque aussi les fichiers de `base`, avec leur empreinte. Après une
-modification de `base`, il faut donc tout régénérer — `swgl-sync update` sans argument — et
-non le seul public, sans quoi les testeurs se heurteraient à des empreintes périmées. L'outil
-le rappelle quand on ne met à jour que le public.
+Une beta reprend les fichiers de `base` depuis le manifeste public, avec leurs empreintes déjà
+calculées : seuls ses propres fichiers sont relus, ce qui la régénère en quelques secondes. Les
+suppressions forcées du public valent aussi pour elle.
 
-Chaque beta re-hache les 15 Go de `base` : avec plusieurs betas ouvertes, la mise à jour
-complète prend quelques minutes par branche.
+Après une modification de `base`, il faut donc régénérer le public **puis** les betas —
+`swgl-sync update` sans argument le fait dans cet ordre — sans quoi les testeurs se heurteraient
+à des empreintes périmées. L'outil le rappelle quand on ne met à jour que le public. Seul le
+public re-hache les 15 Go de `base`.
 
 ### Notes de version
 

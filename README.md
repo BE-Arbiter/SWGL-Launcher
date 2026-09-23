@@ -127,8 +127,9 @@ forces a full pass.
 
 ### Cleanup
 
-The cleanup only ever deletes files the mod itself publishes, and only when the channel no
-longer lists them. `sync.deletable` names them; by default:
+The cleanup only ever deletes files that belong to the mod, and only when the channel no
+longer lists them: files the launcher installed itself, and files matching
+`sync.deletable`, by default:
 
 | Pattern | Covers |
 | --- | --- |
@@ -142,9 +143,11 @@ folder and `**` crosses folders; entries are separated by commas. The launcher, 
 configuration, its state file and any override dropped next to it are never deleted, even if
 a pattern matches them.
 
-A file a channel ships outside these patterns stays in place when the channel drops it,
-unless the channel forces its deletion: the manifest's `delete` list adds paths or patterns
-for that channel, set on the server with `swgl-sync force-delete`. Files the channel still
+Files the launcher installed itself are removed too when the channel drops them: the local
+state (`installed.json`) remembers them, so going back from a beta to the public release
+removes the beta's own files. Beyond that, a channel can force deletions: the manifest's
+`delete` list adds paths or patterns for that channel, set on the server with
+`swgl-sync force-delete`. Files the channel still
 publishes, and the launcher's own files, are never deleted, whatever the list says.
 
 ## Publishing an update
@@ -165,7 +168,7 @@ SWGLManifest --source /srv/swgl/beta-elween --source-prefix /beta-elween \
              --output /srv/swgl/beta-elween/manifest.json
 ```
 
-`SWGLManifest --help` lists the remaining options (`--notes`, `--exclude`, `--remove-list` to drop shared files from a beta, `--delete-list` to force deletions on players' installs, ...).
+`SWGLManifest --help` lists the remaining options (`--notes`, `--exclude`, `--base` to scan the shared folder instead, `--remove-list` to drop shared files from a beta, `--delete-list` to force deletions on players' installs, `--relabel` to change only the label, ...). Without `--version`, the label of the existing manifest is kept.
 
 Server side, [`server/README.md`](server/README.md) documents the ProFTPD setup: one
 read/write publishing account, one read-only public account, one account per beta seeing only

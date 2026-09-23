@@ -35,7 +35,9 @@ Claims below were checked by running code, not by inspection alone.
   `sync.deletable` removed (case-insensitive, `*` not crossing folders); stock game files, other
   `base/` files, other mods, saves, `.part` files and launcher files kept. Forced
   deletions from the manifest's `delete` list applied, except to a file the channel still
-  publishes or to a protected launcher file; old manifests without the key still load.
+  publishes or to a protected launcher file; old manifests without the key still load. Files
+  recorded in `installed.json` (installed by the launcher, e.g. for a beta) removed once the
+  channel drops them, even outside the patterns; a tracked launcher file kept.
 - **Packaging** — published executable launched from a folder containing nothing but itself
   and `SWGL\launcher_music.mp3`, without any configuration file: window, embedded background and
   music all load.
@@ -68,7 +70,7 @@ Claims below were checked by running code, not by inspection alone.
 
 ## What was not verified
 
-- **`server/swgl-sync`**: `update`, `exclude`, `restore`, `force-delete` and `cancel-delete` were tested with a stubbed manifest tool (branch discovery, arguments, list handling, path validation, exit codes), and `--remove-list` in the manifest tool on a real folder; `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
+- **`server/swgl-sync`**: `update`, `rename`, `exclude`, `restore`, `force-delete` and `cancel-delete` were tested against the real manifest tool on a fake repository (labels kept or changed, beta built from the public manifest with exclusions and inherited deletions, quotes stripped from paths), and the `swgl-sync>` word splitting on sample lines; `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
 - **Patch notes on the real server**: the `VRootAlias` to `/patchnotes.md` and its backfill in
   `swgl-sync update` were checked on a copy of the configuration, not against ProFTPD.
 - **Steam library rendering.** Artwork file names and the `shortcuts.vdf` format were verified,

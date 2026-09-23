@@ -131,15 +131,20 @@ namespace SWGLLauncher
                 }
             }
 
-            // Nettoyage : seulement les fichiers supprimables absents du manifeste, qu'ils
-            // aient ete poses par le launcher ou non. Le manifeste peut en designer d'autres.
+            // Nettoyage des fichiers absents du manifeste : ceux que le launcher a lui-meme
+            // installes pour un canal (les fichiers d'une beta quand on revient au public),
+            // ceux couverts par les motifs supprimables, et ceux que le manifeste designe.
             progress?.Report(new SyncProgress("Looking for obsolete files", _installRoot));
 
-            plan.Delete.AddRange(FindObsoleteFiles(manifestPaths, manifest.Delete, cancellationToken)
+            plan.Delete.AddRange(FindObsoleteFiles(manifestPaths, TrackedPaths(state), manifest.Delete, cancellationToken)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase));
 
             return plan;
         }
+
+        /// <summary>Fichiers installes par le launcher lors des mises a jour precedentes.</summary>
+        private static HashSet<string> TrackedPaths(InstalledState state) =>
+            new(state.Files.Select(file => file.Path), StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Parcourt le dossier d'installation et retient les fichiers supprimables qui
@@ -147,6 +152,7 @@ namespace SWGLLauncher
         /// </summary>
         private IEnumerable<string> FindObsoleteFiles(
             HashSet<string> manifestPaths,
+            HashSet<string> trackedPaths,
             IReadOnlyCollection<string> forcedPatterns,
             CancellationToken cancellationToken)
         {
@@ -165,7 +171,8 @@ namespace SWGLLauncher
 
                 if (relative.Length > 0
                     && !manifestPaths.Contains(relative)
-                    && IsDeletable(relative, forcedPatterns))
+                    && (trackedPaths.Contains(relative) || IsDeletable(relative, forcedPatterns))
+                    && !Protected.Contains(relative, StringComparer.OrdinalIgnoreCase))
                 {
                     yield return relative;
                 }
@@ -209,6 +216,11 @@ namespace SWGLLauncher
                 if (DeleteLocalFile(path))
                 {
                     Log?.Invoke($"Removed {path}");
+                }
+                else
+                {
+                    // Garde en memoire : la suppression sera retentee a la prochaine mise a jour.
+                    installed.Add(new InstalledEntry { Path = path });
                 }
             }
 
@@ -358,6 +370,13 @@ namespace SWGLLauncher
                     case TimeoutException:
                     case IOException:
                     case System.Net.Sockets.SocketException:
+                        transient = true;
+                        break;
+
+                    // FluentFTP signale ainsi une connexion deja tombee quand le fichier
+                    // suivant demarre ("No connection to the server exists") : la
+                    // reconnexion la retablit.
+                    case InvalidOperationException:
                         transient = true;
                         break;
                 }

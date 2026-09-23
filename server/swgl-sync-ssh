@@ -5,16 +5,45 @@
 #   ssh swgl-dev@server update          runs "swgl-sync update" and exits
 #   ssh swgl-dev@server                 swgl-sync> prompt
 #
-# A line is never interpreted by a shell: it is only split into words, with no
-# substitution and no pattern expansion, then handed to swgl-sync through sudo.
+# A line is never interpreted by a shell: it is only split into words, quotes
+# grouping words ("Ep3 test 4"), with no substitution and no pattern expansion,
+# then handed to swgl-sync through sudo.
 # No line editing on purpose: bash's (read -e) has bindings that run commands.
 # ==============================================================================
 
+# Splits a line into words. '...' and "..." group words and are removed; nothing
+# else is special: no escapes, no variables, no substitution, no patterns.
+split_words() {
+    local line=$1 word="" quote="" c i started=0
+    words=()
+
+    for (( i = 0; i < ${#line}; i++ )); do
+        c=${line:i:1}
+
+        if [[ -n "$quote" ]]; then
+            if [[ "$c" == "$quote" ]]; then quote=""; else word+=$c; fi
+        elif [[ "$c" == "'" || "$c" == '"' ]]; then
+            quote=$c
+            started=1
+        elif [[ "$c" == [[:space:]] ]]; then
+            (( started )) && words+=("$word")
+            word=""
+            started=0
+        else
+            word+=$c
+            started=1
+        fi
+    done
+
+    (( started )) && words+=("$word")
+    return 0
+}
+
 run() {
-    local args
-    read -ra args <<< "$1"
-    [[ "${args[0]:-}" == swgl-sync ]] && args=("${args[@]:1}")
-    sudo -n /usr/local/sbin/swgl-sync "${args[@]}"
+    local words
+    split_words "$1"
+    [[ "${words[0]:-}" == swgl-sync ]] && words=("${words[@]:1}")
+    sudo -n /usr/local/sbin/swgl-sync "${words[@]}"
 }
 
 if [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then

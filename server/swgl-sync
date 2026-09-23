@@ -3,7 +3,8 @@
 # swgl-sync — manages the branches of the SWGL FTP repository: public and betas.
 #
 #   swgl-sync update                    regenerate public, then every beta
-#   swgl-sync update <branch> [ver]     regenerate one branch: "public" or a code
+#   swgl-sync update <branch> [label]   regenerate one branch: "public" or a code
+#   swgl-sync rename <branch> <label>   change the label players see
 #   swgl-sync create <code>             create a beta
 #   swgl-sync remove <code>             close a beta (its files are kept)
 #   swgl-sync exclude <code> [path]     drop base files from this beta
@@ -41,7 +42,10 @@ usage() {
     cat >&2 <<EOF
 usage:
   swgl-sync update                    public, then every beta
-  swgl-sync update <branch> [ver]     one branch: "$PUBLIC" or a beta code
+  swgl-sync update <branch> [label]   one branch: "$PUBLIC" or a beta code;
+                                      without a label, the current one is kept
+  swgl-sync rename <branch> <label>   change the label players see, nothing
+                                      is recalculated
   swgl-sync create <code>             create a beta
   swgl-sync remove <code>             close a beta (its files are kept)
   swgl-sync exclude <code> [path]     drop base files from this beta;
@@ -55,8 +59,8 @@ usage:
                                       undo a forced deletion
 
 Paths are relative to GameData ("SWGL/SWGL_Menu.pk3"). "*" stays within a
-folder, "**" crosses folders. In a shell, quote patterns; at the swgl-sync>
-prompt, type them as is.
+folder, "**" crosses folders. In a shell, quote patterns so the shell leaves
+them alone. Labels may contain spaces and need no quotes.
 EOF
     exit 1
 }
@@ -78,10 +82,6 @@ list_betas() {
         dir=${dir%/}
         echo "${dir##*/"$DIR_PREFIX"}"
     done
-}
-
-default_version() {
-    date +%Y.%m.%d.%H%M
 }
 
 # List of base files excluded from a beta. Kept next to the .diff, outside the
@@ -142,7 +142,10 @@ require_beta() {
 
 # Path relative to GameData, "/" separators, no leading "/" and no "..".
 normalize_path() {
-    local path=${1//\\//}
+    # Quotes are never part of a path: typed at the swgl-sync> prompt, they would
+    # otherwise end up in the list and the pattern would match nothing.
+    local path=${1//[\"\']/}
+    path=${path//\\//}
     path=${path#/}
 
     [[ -n "$path" ]] || die "empty path"
@@ -155,9 +158,22 @@ normalize_path() {
 # update
 # ------------------------------------------------------------------------------
 
+# Manifest of a branch: "public" or a beta code.
+manifest_file() {
+    if [[ "$1" == "$PUBLIC" ]]; then
+        echo "$ROOT/manifest-public.json"
+    else
+        echo "$ROOT/$DIR_PREFIX$1/manifest.json"
+    fi
+}
+
 update_public() {
-    local version=${1:-$(default_version)}
+    local label=${1:-}
     ensure_patchnotes "$PUBLIC"
+
+    # Without a label, the tool keeps the one already published.
+    local versions=()
+    [[ -n "$label" ]] && versions=(--version "$label")
 
     # Files players must delete, even outside the launcher's own patterns.
     local deletions=()
@@ -165,22 +181,32 @@ update_public() {
     list=$(delete_list "$PUBLIC")
     [[ -s "$list" ]] && deletions=(--delete-list "$list")
 
-    echo "== $PUBLIC ($version)"
+    echo "== $PUBLIC"
     "$MANIFEST_TOOL" --source "$ROOT/base" --source-prefix /base \
                      "${deletions[@]}" \
-                     --channel "$PUBLIC" --version "$version" \
-                     --output "$ROOT/manifest-public.json"
-    chown "$OWNER:$GROUP" "$ROOT/manifest-public.json"
+                     "${versions[@]}" \
+                     --channel "$PUBLIC" \
+                     --output "$(manifest_file "$PUBLIC")"
+    chown "$OWNER:$GROUP" "$(manifest_file "$PUBLIC")"
 }
 
 update_beta() {
     local code=$1
-    local version=${2:-$(default_version)}
+    local label=${2:-}
     local home="$ROOT/$DIR_PREFIX$code"
 
     [[ -d "$home" ]] || die "unknown beta: $code ($home missing)"
     ensure_patchnotes "$code"
     ensure_patchnotes_alias "$code"
+
+    # Without a label, the tool keeps the one already published.
+    local versions=()
+    [[ -n "$label" ]] && versions=(--version "$label")
+
+    # Base files come from the public manifest, already hashed: only the beta's
+    # own files are read. Without a public manifest yet, base is scanned.
+    local base=(--base "$ROOT/base" --base-prefix /base)
+    [[ -f "$(manifest_file "$PUBLIC")" ]] && base=(--base-manifest "$(manifest_file "$PUBLIC")")
 
     # The beta's own files win over base files at the same path, and the ones
     # in the exclusion list are dropped from base.
@@ -194,14 +220,15 @@ update_beta() {
     list=$(delete_list "$code")
     [[ -s "$list" ]] && deletions=(--delete-list "$list")
 
-    echo "== beta $code ($version)"
+    echo "== beta $code"
     "$MANIFEST_TOOL" --source "$home" --source-prefix "/$DIR_PREFIX$code" \
-                     --base "$ROOT/base" --base-prefix /base \
+                     "${base[@]}" \
                      "${removals[@]}" \
                      "${deletions[@]}" \
-                     --channel "$DIR_PREFIX$code" --version "$version" \
-                     --output "$home/manifest.json"
-    chown "$OWNER:$GROUP" "$home/manifest.json"
+                     "${versions[@]}" \
+                     --channel "$DIR_PREFIX$code" \
+                     --output "$(manifest_file "$code")"
+    chown "$OWNER:$GROUP" "$(manifest_file "$code")"
 }
 
 cmd_update() {
@@ -218,20 +245,39 @@ cmd_update() {
 
     local branch=$1
     shift
-    [[ $# -le 1 ]] || usage
+
+    # The rest is the label: words are joined, so it needs no quotes.
+    local label="$*"
 
     if [[ "$branch" == "$PUBLIC" ]]; then
-        update_public "$@"
+        update_public "$label"
 
-        # Every beta manifest carries the base files with their checksums: if
+        # Every beta manifest carries the public files with their checksums: if
         # base changed, they are out of date.
         if [[ -n "$(list_betas)" ]]; then
-            echo "note: betas include base; if base changed, 'swgl-sync update' regenerates them too." >&2
+            echo "note: betas take their base files from the public manifest; if base changed, 'swgl-sync update' refreshes them too." >&2
         fi
     else
         check_code "$branch"
-        update_beta "$branch" "$@"
+        update_beta "$branch" "$label"
     fi
+}
+
+# Changes the label players see, without regenerating the manifest.
+cmd_rename() {
+    [[ $# -ge 2 ]] || usage
+
+    local branch=$1
+    shift
+    require_branch "$branch"
+
+    local manifest
+    manifest=$(manifest_file "$branch")
+    [[ -f "$manifest" ]] || die "no manifest yet for $branch: run 'swgl-sync update $branch' first"
+
+    # The rest is the label: words are joined, so it needs no quotes.
+    "$MANIFEST_TOOL" --relabel --output "$manifest" --version "$*"
+    chown "$OWNER:$GROUP" "$manifest"
 }
 
 # ------------------------------------------------------------------------------
@@ -475,6 +521,7 @@ case "${1:-}" in
     remove)        shift; cmd_remove "$@" ;;
     exclude)       shift; cmd_exclude "$@" ;;
     restore)       shift; cmd_restore "$@" ;;
+    rename)        shift; cmd_rename "$@" ;;
     force-delete)  shift; cmd_force_delete "$@" ;;
     cancel-delete) shift; cmd_cancel_delete "$@" ;;
     *)             usage ;;

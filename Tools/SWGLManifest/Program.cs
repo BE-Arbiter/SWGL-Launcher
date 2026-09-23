@@ -32,23 +32,37 @@ namespace SWGLLauncher.ManifestTool
 
         private static int Run(Options options)
         {
+            // Manifeste deja publie : son libelle est conserve si aucun n'est donne.
+            Manifest? previous = TryLoadManifest(options.Output);
+
+            if (options.Relabel)
+            {
+                return Relabel(options, previous);
+            }
+
             var manifest = new Manifest
             {
                 Channel = options.Channel,
-                Version = options.Version,
+                Version = options.Version ?? previous?.Version ?? DefaultVersion(),
                 Notes = options.Notes,
             };
 
             var stopwatch = Stopwatch.StartNew();
             var entries = new Dictionary<string, ManifestEntry>(StringComparer.OrdinalIgnoreCase);
+            var inheritedDeletions = new List<string>();
 
             string[] removals = LoadPatternList(options.RemoveList, "Liste de retrait");
             bool[] removalUsed = new bool[removals.Length];
 
             // Le dossier commun d'abord : les fichiers de la beta l'emportent ensuite.
             // La liste de retrait ne s'applique qu'a lui : un fichier depose dans la beta
-            // elle-meme est voulu, il reste.
-            if (options.BaseDirectory is not null)
+            // elle-meme est voulu, il reste. Si le manifeste public est fourni, il remplace
+            // le parcours du dossier commun : ses empreintes sont deja calculees.
+            if (options.BaseManifest is not null)
+            {
+                inheritedDeletions.AddRange(AddManifest(entries, options.BaseManifest, removals, removalUsed));
+            }
+            else if (options.BaseDirectory is not null)
             {
                 AddDirectory(entries, options.BaseDirectory, options.BasePrefix, options, removals, removalUsed);
             }
@@ -67,7 +81,10 @@ namespace SWGLLauncher.ManifestTool
             manifest.Files = [.. entries.Values.OrderBy(e => e.Path, StringComparer.OrdinalIgnoreCase)];
 
             // Fichiers que le launcher doit supprimer chez le joueur, hors de ses propres motifs.
-            manifest.Delete = [.. LoadPatternList(options.DeleteList, "Liste de suppression")];
+            // Celles du public valent aussi pour une beta construite sur son manifeste.
+            manifest.Delete = [.. inheritedDeletions
+                .Concat(LoadPatternList(options.DeleteList, "Liste de suppression"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)];
 
             // Le launcher ne supprime jamais un fichier publie : le motif serait sans effet.
             foreach (string pattern in manifest.Delete)
@@ -97,6 +114,92 @@ namespace SWGLLauncher.ManifestTool
             Console.WriteLine($"Ecrit    : {options.Output}");
 
             return 0;
+        }
+
+        /// <summary>Change seulement le libelle d'un manifeste existant, sans rien recalculer.</summary>
+        private static int Relabel(Options options, Manifest? previous)
+        {
+            if (previous is null)
+            {
+                throw new ArgumentException($"Manifeste introuvable ou illisible : {options.Output}");
+            }
+
+            if (options.Version is null)
+            {
+                throw new ArgumentException("--relabel demande --version.");
+            }
+
+            string before = previous.Version;
+            previous.Version = options.Version;
+            File.WriteAllText(options.Output, ManifestService.Serialize(previous));
+
+            Console.WriteLine($"Canal    : {previous.Channel}");
+            Console.WriteLine($"Version  : {before} -> {previous.Version}");
+            Console.WriteLine($"Ecrit    : {options.Output}");
+            return 0;
+        }
+
+        private static Manifest? TryLoadManifest(string path)
+        {
+            try
+            {
+                return File.Exists(path) ? ManifestService.ParseManifest(File.ReadAllBytes(path)) : null;
+            }
+            catch (Exception exception) when (exception is IOException or System.Text.Json.JsonException or InvalidDataException)
+            {
+                return null;
+            }
+        }
+
+        private static string DefaultVersion() => DateTime.Now.ToString("yyyy.MM.dd.HHmm");
+
+        /// <summary>
+        /// Reprend les fichiers d'un manifeste deja genere (le public), sans relire ni hacher
+        /// le dossier commun. La liste de retrait s'applique comme pour un dossier.
+        /// </summary>
+        /// <returns>Les suppressions forcees de ce manifeste, heritees par la beta.</returns>
+        private static IReadOnlyList<string> AddManifest(
+            Dictionary<string, ManifestEntry> entries,
+            string manifestPath,
+            string[] removals,
+            bool[] removalUsed)
+        {
+            Manifest source = TryLoadManifest(manifestPath)
+                ?? throw new ArgumentException($"Manifeste de base introuvable ou illisible : {manifestPath}");
+
+            foreach (ManifestEntry entry in source.Files)
+            {
+                if (IsRemoved(entry.Path, removals, removalUsed))
+                {
+                    Console.WriteLine($"  - {entry.Path} (retire)");
+                    continue;
+                }
+
+                entries[entry.Path] = entry;
+            }
+
+            Console.WriteLine($"  base : {source.Files.Count} fichier(s) repris de {manifestPath} ({source.Version})");
+            return source.Delete;
+        }
+
+        /// <summary>
+        /// Vrai si un motif de la liste de retrait couvre le chemin. Tous les motifs qui le
+        /// couvrent sont marques utilises, pas seulement le premier.
+        /// </summary>
+        private static bool IsRemoved(string relative, string[] removals, bool[] removalUsed)
+        {
+            bool removed = false;
+
+            for (int i = 0; i < removals.Length; i++)
+            {
+                if (ManifestService.MatchesPattern(relative, removals[i]))
+                {
+                    removalUsed[i] = true;
+                    removed = true;
+                }
+            }
+
+            return removed;
         }
 
         /// <summary>
@@ -147,19 +250,7 @@ namespace SWGLLauncher.ManifestTool
                 }
 
                 // Retire avant de hacher : inutile de lire un fichier qui ne sera pas publie.
-                // Tous les motifs qui le couvrent sont marques, pas seulement le premier.
-                bool removed = false;
-
-                for (int i = 0; i < removals.Length; i++)
-                {
-                    if (ManifestService.MatchesPattern(relative, removals[i]))
-                    {
-                        removalUsed[i] = true;
-                        removed = true;
-                    }
-                }
-
-                if (removed)
+                if (IsRemoved(relative, removals, removalUsed))
                 {
                     Console.WriteLine($"  - {relative} (retire)");
                     continue;
@@ -238,7 +329,9 @@ namespace SWGLLauncher.ManifestTool
             public string? BaseDirectory { get; private set; }
             public string BasePrefix { get; private set; } = "/base";
             public string Channel { get; private set; } = "public";
-            public string Version { get; private set; } = DateTime.Now.ToString("yyyy.MM.dd.HHmm");
+            public string? Version { get; private set; }
+            public string? BaseManifest { get; private set; }
+            public bool Relabel { get; private set; }
             public string Notes { get; private set; } = string.Empty;
             public string Output { get; private set; } = string.Empty;
             public List<string> Exclude { get; } = [];
@@ -273,6 +366,8 @@ namespace SWGLLauncher.ManifestTool
                         case "--source-prefix": options.SourcePrefix = Next(); break;
                         case "--base": options.BaseDirectory = Next(); break;
                         case "--base-prefix": options.BasePrefix = Next(); break;
+                        case "--base-manifest": options.BaseManifest = Next(); break;
+                        case "--relabel": options.Relabel = true; break;
                         case "--channel": options.Channel = Next(); break;
                         case "--version": options.Version = Next(); break;
                         case "--notes": options.Notes = Next(); break;
@@ -282,6 +377,16 @@ namespace SWGLLauncher.ManifestTool
                         case "--delete-list": options.DeleteList = Next(); break;
                         default: throw new ArgumentException($"Argument inconnu : {key}");
                     }
+                }
+
+                if (options.Relabel)
+                {
+                    if (options.Output.Length == 0)
+                    {
+                        throw new ArgumentException("--relabel demande --output.");
+                    }
+
+                    return options;
                 }
 
                 if (options.Source.Length == 0)
@@ -306,8 +411,11 @@ namespace SWGLLauncher.ManifestTool
                       --source-prefix <chemin>   Chemin FTP de ce dossier (defaut : /)
                       --base <dossier>           Dossier commun partage (optionnel, pour une beta)
                       --base-prefix <chemin>     Chemin FTP du dossier commun (defaut : /base)
+                      --base-manifest <fichier>  Manifeste deja genere du dossier commun (le public) :
+                                                 ses fichiers sont repris sans etre relus ni haches
                       --channel <nom>            Nom du canal (defaut : public)
-                      --version <texte>          Version affichee (defaut : date du jour)
+                      --version <texte>          Version affichee (defaut : celle du manifeste
+                                                 existant, sinon la date du jour)
                       --notes <texte>            Note de version
                       --output <fichier>         Fichier a ecrire (defaut : <source>/manifest.json)
                       --exclude <fragment>       Exclut les chemins contenant ce fragment
@@ -315,6 +423,8 @@ namespace SWGLLauncher.ManifestTool
                                                  motif par ligne ("*" dans un dossier, "**" au-dela)
                       --delete-list <fichier>    Fichiers a supprimer chez le joueur meme hors des
                                                  motifs du launcher, meme format
+                      --relabel                  Change seulement la version de --output, sans rien
+                                                 recalculer (avec --version)
 
                     Exemples :
                       SWGLManifest --source C:\ftp\public --channel public
