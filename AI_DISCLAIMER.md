@@ -72,7 +72,7 @@ Claims below were checked by running code, not by inspection alone.
 
 ## What was not verified
 
-- **`server/swgl-sync`**: `update`, `rename`, `exclude`, `restore`, `force-delete` and `cancel-delete` were tested against the real manifest tool on a fake repository (labels kept or changed, beta built from the public manifest with exclusions and inherited deletions, quotes stripped from paths), and the `swgl-sync>` word splitting on sample lines; `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
+- **`server/swgl-sync`**: `update`, `rename`, `exclude`, `restore`, `force-delete` and `cancel-delete` were tested against the real manifest tool on a fake repository (labels kept or changed, beta built from the public manifest with exclusions and inherited deletions, quotes stripped from paths, checksums reused for unchanged files and recomputed for modified or new ones), and the `swgl-sync>` word splitting on sample lines; `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
 - **Patch notes on the real server**: the `VRootAlias` to `/patchnotes.md` and its backfill in
   `swgl-sync update` were checked on a copy of the configuration, not against ProFTPD.
 - **Steam library rendering.** Artwork file names and the `shortcuts.vdf` format were verified,

@@ -168,7 +168,9 @@ SWGLManifest --source /srv/swgl/beta-elween --source-prefix /beta-elween \
              --output /srv/swgl/beta-elween/manifest.json
 ```
 
-`SWGLManifest --help` lists the remaining options (`--notes`, `--exclude`, `--base` to scan the shared folder instead, `--remove-list` to drop shared files from a beta, `--delete-list` to force deletions on players' installs, `--relabel` to change only the label, ...). Without `--version`, the label of the existing manifest is kept.
+`SWGLManifest --help` lists the remaining options (`--notes`, `--exclude`, `--base` to scan the shared folder instead, `--remove-list` to drop shared files from a beta, `--delete-list` to force deletions on players' installs, `--relabel` to change only the label, ...). Without `--version`, the label of the existing manifest is kept. Each entry records the file's
+modification time: a file whose size and time are unchanged since the previous manifest keeps
+its checksum without being read again (`--rehash` reads everything).
 
 Server side, [`server/README.md`](server/README.md) documents the ProFTPD setup: one
 read/write publishing account, one read-only public account, one account per beta seeing only

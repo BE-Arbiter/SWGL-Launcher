@@ -52,6 +52,15 @@ namespace SWGLLauncher
         [JsonPropertyName("sha256")]
         public string Sha256 { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Date de modification du fichier sur le serveur (UTC) au moment du calcul de
+        /// l'empreinte. Sert seulement a l'outil de manifeste, pour ne pas re-hacher un
+        /// fichier inchange ; le launcher l'ignore.
+        /// </summary>
+        [JsonPropertyName("modified")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public DateTime? Modified { get; set; }
+
         /// <summary>Chemin FTP effectif : "from" s'il est renseigne, sinon "path".</summary>
         [JsonIgnore]
         public string RemotePath => From.Length > 0 ? From : "/" + Path;

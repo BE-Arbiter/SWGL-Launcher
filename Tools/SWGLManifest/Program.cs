@@ -51,6 +51,16 @@ namespace SWGLLauncher.ManifestTool
             var entries = new Dictionary<string, ManifestEntry>(StringComparer.OrdinalIgnoreCase);
             var inheritedDeletions = new List<string>();
 
+            // Empreintes du manifeste precedent, reprises pour tout fichier dont la taille et la
+            // date n'ont pas bouge : seuls les fichiers nouveaux ou modifies sont relus.
+            var known = options.Rehash || previous is null
+                ? new Dictionary<string, ManifestEntry>(StringComparer.OrdinalIgnoreCase)
+                : previous.Files
+                    .Where(file => file.Modified is not null)
+                    .GroupBy(file => file.From, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            var stats = new HashStats();
+
             string[] removals = LoadPatternList(options.RemoveList, "Liste de retrait");
             bool[] removalUsed = new bool[removals.Length];
 
@@ -64,10 +74,10 @@ namespace SWGLLauncher.ManifestTool
             }
             else if (options.BaseDirectory is not null)
             {
-                AddDirectory(entries, options.BaseDirectory, options.BasePrefix, options, removals, removalUsed);
+                AddDirectory(entries, options.BaseDirectory, options.BasePrefix, options, removals, removalUsed, known, stats);
             }
 
-            AddDirectory(entries, options.Source, options.SourcePrefix, options, [], []);
+            AddDirectory(entries, options.Source, options.SourcePrefix, options, [], [], known, stats);
 
             // Un motif qui ne retire rien est presque toujours une faute de frappe.
             for (int i = 0; i < removals.Length; i++)
@@ -104,6 +114,7 @@ namespace SWGLLauncher.ManifestTool
             Console.WriteLine($"Canal    : {manifest.Channel}");
             Console.WriteLine($"Version  : {manifest.Version}");
             Console.WriteLine($"Fichiers : {manifest.Files.Count} ({FormatSize(total)})");
+            Console.WriteLine($"Haches   : {stats.Hashed}, repris sans relecture : {stats.Reused}");
 
             if (manifest.Delete.Count > 0)
             {
@@ -230,7 +241,9 @@ namespace SWGLLauncher.ManifestTool
             string remotePrefix,
             Options options,
             string[] removals,
-            bool[] removalUsed)
+            bool[] removalUsed,
+            IReadOnlyDictionary<string, ManifestEntry> known,
+            HashStats stats)
         {
             string root = Path.GetFullPath(directory);
 
@@ -257,17 +270,38 @@ namespace SWGLLauncher.ManifestTool
                 }
 
                 var info = new FileInfo(file);
-                Console.WriteLine($"  {relative} ({FormatSize(info.Length)})");
+                string from = CombineRemote(remotePrefix, relative);
+                DateTime modified = info.LastWriteTimeUtc;
+
+                // Meme fichier, meme taille et meme date qu'au dernier calcul, a l'identique :
+                // l'empreinte est reprise. Au moindre ecart, le fichier est relu.
+                string hash;
+
+                if (known.TryGetValue(from, out ManifestEntry? previous)
+                    && previous.Size == info.Length
+                    && previous.Modified == modified
+                    && previous.Sha256.Length > 0)
+                {
+                    hash = previous.Sha256;
+                    stats.Reused++;
+                }
+                else
+                {
+                    Console.WriteLine($"  {relative} ({FormatSize(info.Length)})");
+                    hash = ManifestService
+                        .ComputeSha256Async(file, CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+                    stats.Hashed++;
+                }
 
                 entries[relative] = new ManifestEntry
                 {
                     Path = relative,
-                    From = CombineRemote(remotePrefix, relative),
+                    From = from,
                     Size = info.Length,
-                    Sha256 = ManifestService
-                        .ComputeSha256Async(file, CancellationToken.None)
-                        .GetAwaiter()
-                        .GetResult(),
+                    Sha256 = hash,
+                    Modified = modified,
                 };
             }
         }
@@ -321,6 +355,14 @@ namespace SWGLLauncher.ManifestTool
             return unit == 0 ? $"{bytes} o" : $"{value:0.#} {units[unit]}";
         }
 
+        /// <summary>Compteurs affiches en fin de generation.</summary>
+        private sealed class HashStats
+        {
+            public int Hashed { get; set; }
+
+            public int Reused { get; set; }
+        }
+
         /// <summary>Arguments de la ligne de commande.</summary>
         private sealed class Options
         {
@@ -331,6 +373,7 @@ namespace SWGLLauncher.ManifestTool
             public string Channel { get; private set; } = "public";
             public string? Version { get; private set; }
             public string? BaseManifest { get; private set; }
+            public bool Rehash { get; private set; }
             public bool Relabel { get; private set; }
             public string Notes { get; private set; } = string.Empty;
             public string Output { get; private set; } = string.Empty;
@@ -368,6 +411,7 @@ namespace SWGLLauncher.ManifestTool
                         case "--base-prefix": options.BasePrefix = Next(); break;
                         case "--base-manifest": options.BaseManifest = Next(); break;
                         case "--relabel": options.Relabel = true; break;
+                        case "--rehash": options.Rehash = true; break;
                         case "--channel": options.Channel = Next(); break;
                         case "--version": options.Version = Next(); break;
                         case "--notes": options.Notes = Next(); break;
@@ -425,6 +469,8 @@ namespace SWGLLauncher.ManifestTool
                                                  motifs du launcher, meme format
                       --relabel                  Change seulement la version de --output, sans rien
                                                  recalculer (avec --version)
+                      --rehash                   Relit et hache tous les fichiers, sans reprendre les
+                                                 empreintes du manifeste existant
 
                     Exemples :
                       SWGLManifest --source C:\ftp\public --channel public

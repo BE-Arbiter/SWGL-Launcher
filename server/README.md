@@ -264,10 +264,14 @@ Une beta reprend les fichiers de `base` depuis le manifeste public, avec leurs e
 calculées : seuls ses propres fichiers sont relus, ce qui la régénère en quelques secondes. Les
 suppressions forcées du public valent aussi pour elle.
 
+Le public lui-même ne relit que ce qui a changé : chaque manifeste mémorise la taille et la
+date de chaque fichier, et une empreinte n'est recalculée que pour un fichier nouveau, ou dont
+la taille ou la date diffère. La première génération avec cet outil relit tout une dernière
+fois. Pour forcer une relecture complète : `SWGLManifest ... --rehash`.
+
 Après une modification de `base`, il faut donc régénérer le public **puis** les betas —
 `swgl-sync update` sans argument le fait dans cet ordre — sans quoi les testeurs se heurteraient
-à des empreintes périmées. L'outil le rappelle quand on ne met à jour que le public. Seul le
-public re-hache les 15 Go de `base`.
+à des empreintes périmées. L'outil le rappelle quand on ne met à jour que le public.
 
 ### Notes de version
 
