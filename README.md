@@ -32,12 +32,14 @@ Windows 10 or 11, 64-bit. Nothing else — the .NET runtime is bundled in the ex
 
 ## Installation
 
-Drop these two files into the game's `GameData` folder, next to `jasp.exe`:
+Drop the executable and its `SWGL` folder into the game's `GameData` folder, next to
+`jasp.exe`:
 
 ```
 GameData\
 ├── SWGLLauncher.exe
-└── launcher.properties
+└── SWGL\
+    └── launcher_music.mp3
 ```
 
 Then run `SWGLLauncher.exe`. On the first update it will download the mod into place.
@@ -55,16 +57,17 @@ At the bottom left, **Options** opens upward:
 | **Beta channel** | Pick *Public*, a saved beta, add a beta code, or forget one. |
 | **Configure Jedi Outcast...** | Import `Assets0/1/2.pk3` from a Jedi Outcast install. |
 | **Configure Steam launcher...** | Add the launcher to the Steam library, artwork included. |
+| **Check integrity** | Re-check every checksum and report what differs, without downloading. |
 
-At the bottom right, **Update** brings the installation in line with the channel; its chevron
-opens *Verify only*, which re-checks every checksum and reports what differs without
-downloading anything. **Start** launches the game. During an operation *Update* becomes
+At the bottom right, **Update** brings the installation in line with the channel. **Start** launches the game. During an operation *Update* becomes
 *Cancel* and *Start* is disabled.
 
 ## Configuration
 
-`launcher.properties` sits next to the executable and is plain `key=value`. Paths are
-relative to the executable or absolute; colours are `#RRGGBB` or `#AARRGGBB`.
+Every setting has a built-in default, so no configuration file is shipped. To override a
+value, create `launcher.properties` next to the executable (plain `key=value`) with only the
+keys to change; the launcher also writes to it to remember choices made in the interface.
+Paths are relative to the executable or absolute; colours are `#RRGGBB` or `#AARRGGBB`.
 
 | Key | Meaning |
 | --- | --- |
@@ -86,9 +89,9 @@ relative to the executable or absolute; colours are `#RRGGBB` or `#AARRGGBB`.
 | `jo.path`, `steam.*` | Written by the Options menu. |
 | `beta.codes`, `channel.selected` | Written by the channel menu. |
 
-The background, the music and the Steam artwork are embedded in the executable. To replace
-one without rebuilding, drop a file next to the executable — `SWGL\background.png`,
-`SWGL\music.mp3`, `SWGL\cover.png`, `SWGL\wide_cover.jpg`, `SWGL\logo.png`. A file on disk
+The background and the Steam artwork are embedded in the executable; the music ships next to
+it as `SWGL\launcher_music.mp3`. To replace an image without rebuilding, drop a file next to the
+executable — `SWGL\background.png`, `SWGL\cover.png`, `SWGL\wide_cover.jpg`, `SWGL\logo.png`. A file on disk
 always wins over the embedded copy, and the cleanup leaves it alone.
 
 ## How updating works
@@ -109,7 +112,7 @@ Each channel publishes a `manifest.json` at the root of its FTP account:
 manifest describes the **expected end state**, not a sequence of operations — which is what
 makes installing, repairing, switching beta and going back to public the same operation.
 
-Checksums are only recomputed when a file's size or timestamp has changed; *Verify only*
+Checksums are only recomputed when a file's size or timestamp has changed; *Check integrity*
 forces a full pass.
 
 ### Cleanup
@@ -145,11 +148,11 @@ SWGLManifest --source /srv/swgl/beta-elween --source-prefix /beta-elween \
              --output /srv/swgl/beta-elween/manifest.json
 ```
 
-`SWGLManifest --help` lists the remaining options (`--notes`, `--exclude`, ...).
+`SWGLManifest --help` lists the remaining options (`--notes`, `--exclude`, `--remove-list` to drop shared files from a beta, ...).
 
 Server side, [`server/README.md`](server/README.md) documents the ProFTPD setup: one
 read/write publishing account, one read-only public account, one account per beta seeing only
-the shared folder and its own build. `server/swgl-sync` creates and removes betas and regenerates every manifest in one command.
+the shared folder and its own build. `server/swgl-sync` creates and removes betas, removes shared files from a given beta, and regenerates every manifest in one command.
 
 ## Building from source
 
@@ -161,11 +164,11 @@ dotnet build SWGLLauncher.slnx
 dotnet publish SWGLLauncher/SWGLLauncher.csproj -c Release
 ```
 
-The publish output is the executable plus `launcher.properties`, nothing else. Two settings
-in the project file make that possible and should not be dropped:
+The publish output is the executable plus `SWGL\launcher_music.mp3`, nothing else. Two settings in
+the project file make that possible and should not be dropped:
 `SatelliteResourceLanguages`, which stops dependencies from creating per-language
-subfolders, and `ExcludeFromSingleFile` on `launcher.properties`, without which the bundler
-swallows it into the executable and it can no longer be edited.
+subfolders, and `ExcludeFromSingleFile` on `launcher_music.mp3`, without which the bundler swallows it
+into the executable.
 
 To build the manifest tool for the server:
 
@@ -178,7 +181,7 @@ dotnet publish Tools/SWGLManifest/SWGLManifest.csproj -c Release -r linux-x64 \
 
 ```
 SWGLLauncher/            the launcher (WinForms, .NET 10)
-  SWGL/                  artwork and music, embedded at build time
+  SWGL/                  artwork (embedded at build time) and music (shipped alongside)
 Tools/SWGLManifest/      manifest generator
 server/                  ProFTPD configuration and the swgl-sync tool
 ```

@@ -10,6 +10,9 @@ namespace SWGLLauncher
     {
         public const string DefaultFileName = "launcher.properties";
 
+        /// <summary>Serveur de mise a jour utilise quand la configuration n'en donne pas.</summary>
+        public const string DefaultFtpHost = "vps-c2b14a7e.vps.ovh.net";
+
         private readonly Dictionary<string, string> _values =
             new(StringComparer.OrdinalIgnoreCase);
 

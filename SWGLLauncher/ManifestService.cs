@@ -84,6 +84,51 @@ namespace SWGLLauncher
             return Convert.ToHexString(hash).ToLowerInvariant();
         }
 
+        /// <summary>
+        /// Motif simple facon shell : "*" reste dans un dossier, "**" traverse, "?" vaut
+        /// un caractere. La comparaison ignore la casse, comme Windows. Partage entre le
+        /// launcher (fichiers a conserver) et l'outil de manifeste (fichiers retires d'une beta).
+        /// </summary>
+        public static bool MatchesPattern(string path, string pattern)
+        {
+            var regex = new StringBuilder("^");
+
+            for (int i = 0; i < pattern.Length; i++)
+            {
+                char c = pattern[i];
+
+                if (c == '*')
+                {
+                    bool doubled = i + 1 < pattern.Length && pattern[i + 1] == '*';
+
+                    if (doubled)
+                    {
+                        regex.Append(".*");
+                        i++;
+                    }
+                    else
+                    {
+                        regex.Append("[^/]*");
+                    }
+                }
+                else if (c == '?')
+                {
+                    regex.Append("[^/]");
+                }
+                else
+                {
+                    regex.Append(System.Text.RegularExpressions.Regex.Escape(c.ToString()));
+                }
+            }
+
+            regex.Append('$');
+
+            return System.Text.RegularExpressions.Regex.IsMatch(
+                path,
+                regex.ToString(),
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+
         /// <summary>Normalise un chemin de manifeste : separateurs "/", sans "./" ni doublons.</summary>
         public static string NormalizeRelativePath(string path)
         {

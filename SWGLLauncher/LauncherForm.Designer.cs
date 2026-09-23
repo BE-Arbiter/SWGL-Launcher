@@ -108,12 +108,10 @@ namespace SWGLLauncher
             // btnUpdate
             //
             btnUpdate.Name = "btnUpdate";
-            btnUpdate.ShowDropDown = true;
             btnUpdate.Size = new Size(170, 28);
             btnUpdate.TabIndex = 1;
             btnUpdate.Text = "Update";
             btnUpdate.Click += BtnUpdate_Click;
-            btnUpdate.DropDownClick += BtnUpdateDropDown_Click;
             //
             // btnStart
             //

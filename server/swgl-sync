@@ -6,6 +6,8 @@
 #   swgl-sync update <branche> [ver]    regenere une branche : "public" ou un code
 #   swgl-sync create <code>             cree une beta
 #   swgl-sync remove <code>             ferme une beta (ses fichiers restent)
+#   swgl-sync exclude <code> [chemin]   retire des fichiers de base pour cette beta
+#   swgl-sync restore <code> <chemin>   annule un retrait
 #
 # Une beta <code> donne le compte "swgl-<code>", mot de passe "<code>", qui voit
 # /base, /beta-<code>, /beta-<code>.diff et son /manifest.json.
@@ -37,6 +39,12 @@ usage:
   swgl-sync update <branche> [ver]    une branche : "$PUBLIC" ou un code de beta
   swgl-sync create <code>             cree une beta
   swgl-sync remove <code>             ferme une beta (ses fichiers restent)
+  swgl-sync exclude <code> [chemin]   retire des fichiers de base pour cette beta ;
+                                      sans chemin, affiche la liste
+  swgl-sync restore <code> <chemin>   annule un retrait
+
+Les chemins sont relatifs au GameData ("SWGL/SWGL_Menu.pk3"). "*" reste dans un
+dossier, "**" le traverse : mettre le motif entre guillemets.
 EOF
     exit 1
 }
@@ -64,6 +72,28 @@ default_version() {
     date +%Y.%m.%d.%H%M
 }
 
+# Liste des fichiers de base retires d'une beta. A cote du .diff, hors du dossier
+# de la beta : ni scannee dans le manifeste, ni visible des testeurs.
+remove_list() {
+    echo "$ROOT/$DIR_PREFIX$1.remove"
+}
+
+require_beta() {
+    check_code "$1"
+    [[ -d "$ROOT/$DIR_PREFIX$1" ]] || die "beta inconnue : $1 ($ROOT/$DIR_PREFIX$1 absent)"
+}
+
+# Chemin relatif au GameData, separateurs "/", sans "/" initial ni remontee "..".
+normalize_path() {
+    local path=${1//\\//}
+    path=${path#/}
+
+    [[ -n "$path" ]] || die "chemin vide"
+    [[ "/$path/" != */../* ]] || die "chemin refuse : $1"
+
+    echo "$path"
+}
+
 # ------------------------------------------------------------------------------
 # update
 # ------------------------------------------------------------------------------
@@ -85,10 +115,17 @@ update_beta() {
 
     [[ -d "$home" ]] || die "beta inconnue : $code ($home absent)"
 
-    # Les fichiers de la beta l'emportent sur ceux de base au meme chemin.
+    # Les fichiers de la beta l'emportent sur ceux de base au meme chemin, et ceux
+    # de la liste de retrait sont ecartes de base.
+    local removals=()
+    local list
+    list=$(remove_list "$code")
+    [[ -s "$list" ]] && removals=(--remove-list "$list")
+
     echo "== beta $code ($version)"
     "$MANIFEST_TOOL" --source "$home" --source-prefix "/$DIR_PREFIX$code" \
                      --base "$ROOT/base" --base-prefix /base \
+                     "${removals[@]}" \
                      --channel "$DIR_PREFIX$code" --version "$version" \
                      --output "$home/manifest.json"
     chown "$OWNER:$GROUP" "$home/manifest.json"
@@ -215,12 +252,93 @@ cmd_remove() {
 }
 
 # ------------------------------------------------------------------------------
+# exclude / restore
+# ------------------------------------------------------------------------------
+
+cmd_exclude() {
+    [[ $# -ge 1 ]] || usage
+
+    local code=$1
+    shift
+    require_beta "$code"
+
+    local list
+    list=$(remove_list "$code")
+
+    # Sans chemin : affiche la liste.
+    if [[ $# -eq 0 ]]; then
+        if [[ -s "$list" ]]; then
+            echo "fichiers de base retires de la beta $code :"
+            sed 's/^/  /' "$list"
+        else
+            echo "aucun fichier de base retire de la beta $code"
+        fi
+        return
+    fi
+
+    if [[ ! -f "$list" ]]; then
+        install -o "$OWNER" -g "$GROUP" -m 644 /dev/null "$list"
+    fi
+
+    local path
+    for path in "$@"; do
+        path=$(normalize_path "$path")
+
+        if grep -Fxq -- "$path" "$list"; then
+            echo "  deja retire : $path"
+            continue
+        fi
+
+        # Un chemin exact absent de base est presque toujours une faute de frappe.
+        if [[ "$path" != *[*?]* && ! -e "$ROOT/base/$path" ]]; then
+            echo "  attention : $path n'existe pas dans base" >&2
+        fi
+
+        echo "$path" >> "$list"
+        echo "  retire : $path"
+    done
+
+    echo "ensuite : swgl-sync update $code"
+}
+
+cmd_restore() {
+    [[ $# -ge 2 ]] || usage
+
+    local code=$1
+    shift
+    require_beta "$code"
+
+    local list
+    list=$(remove_list "$code")
+    [[ -s "$list" ]] || die "aucun fichier de base retire de la beta $code"
+
+    local path
+    for path in "$@"; do
+        path=$(normalize_path "$path")
+
+        if grep -Fxq -- "$path" "$list"; then
+            # grep -v sort en erreur quand il ne reste plus aucune ligne : pas une erreur ici.
+            grep -Fxv -- "$path" "$list" > "$list.tmp" || true
+            cat "$list.tmp" > "$list"
+            rm -f "$list.tmp"
+            echo "  retabli : $path"
+        else
+            echo "  pas dans la liste : $path"
+        fi
+    done
+
+    echo "ensuite : swgl-sync update $code"
+}
+
+# ------------------------------------------------------------------------------
 
 [[ $EUID -eq 0 ]] || die "a lancer en root (sudo)"
 
 case "${1:-}" in
-    update) shift; cmd_update "$@" ;;
-    create) shift; cmd_create "$@" ;;
-    remove) shift; cmd_remove "$@" ;;
-    *)      usage ;;
+    update)  shift; cmd_update "$@" ;;
+    create)  shift; cmd_create "$@" ;;
+    remove)  shift; cmd_remove "$@" ;;
+    exclude) shift; cmd_exclude "$@" ;;
+    restore) shift; cmd_restore "$@" ;;
+    *)       usage ;;
 esac

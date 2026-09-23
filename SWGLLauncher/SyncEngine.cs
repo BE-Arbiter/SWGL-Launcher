@@ -215,57 +215,13 @@ namespace SWGLLauncher
 
             foreach (string pattern in KeepPatterns)
             {
-                if (MatchesPattern(relativePath, pattern))
+                if (ManifestService.MatchesPattern(relativePath, pattern))
                 {
                     return true;
                 }
             }
 
             return false;
-        }
-
-        /// <summary>
-        /// Motif simple facon shell : "*" reste dans un dossier, "**" traverse, "?" vaut
-        /// un caractere. La comparaison ignore la casse, comme Windows.
-        /// </summary>
-        private static bool MatchesPattern(string path, string pattern)
-        {
-            var regex = new System.Text.StringBuilder("^");
-
-            for (int i = 0; i < pattern.Length; i++)
-            {
-                char c = pattern[i];
-
-                if (c == '*')
-                {
-                    bool doubled = i + 1 < pattern.Length && pattern[i + 1] == '*';
-
-                    if (doubled)
-                    {
-                        regex.Append(".*");
-                        i++;
-                    }
-                    else
-                    {
-                        regex.Append("[^/]*");
-                    }
-                }
-                else if (c == '?')
-                {
-                    regex.Append("[^/]");
-                }
-                else
-                {
-                    regex.Append(System.Text.RegularExpressions.Regex.Escape(c.ToString()));
-                }
-            }
-
-            regex.Append('$');
-
-            return System.Text.RegularExpressions.Regex.IsMatch(
-                path,
-                regex.ToString(),
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         }
 
         /// <summary>

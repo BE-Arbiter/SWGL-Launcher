@@ -42,13 +42,27 @@ namespace SWGLLauncher.ManifestTool
             var stopwatch = Stopwatch.StartNew();
             var entries = new Dictionary<string, ManifestEntry>(StringComparer.OrdinalIgnoreCase);
 
+            string[] removals = LoadRemoveList(options.RemoveList);
+            bool[] removalUsed = new bool[removals.Length];
+
             // Le dossier commun d'abord : les fichiers de la beta l'emportent ensuite.
+            // La liste de retrait ne s'applique qu'a lui : un fichier depose dans la beta
+            // elle-meme est voulu, il reste.
             if (options.BaseDirectory is not null)
             {
-                AddDirectory(entries, options.BaseDirectory, options.BasePrefix, options);
+                AddDirectory(entries, options.BaseDirectory, options.BasePrefix, options, removals, removalUsed);
             }
 
-            AddDirectory(entries, options.Source, options.SourcePrefix, options);
+            AddDirectory(entries, options.Source, options.SourcePrefix, options, [], []);
+
+            // Un motif qui ne retire rien est presque toujours une faute de frappe.
+            for (int i = 0; i < removals.Length; i++)
+            {
+                if (!removalUsed[i])
+                {
+                    Console.Error.WriteLine($"Attention : \"{removals[i]}\" ne correspond a aucun fichier de base.");
+                }
+            }
 
             manifest.Files = [.. entries.Values.OrderBy(e => e.Path, StringComparer.OrdinalIgnoreCase)];
 
@@ -65,11 +79,35 @@ namespace SWGLLauncher.ManifestTool
             return 0;
         }
 
+        /// <summary>
+        /// Lit la liste des fichiers de base a retirer : un chemin ou un motif par ligne,
+        /// lignes vides et commentaires "#" ignores.
+        /// </summary>
+        private static string[] LoadRemoveList(string? path)
+        {
+            if (path is null)
+            {
+                return [];
+            }
+
+            if (!File.Exists(path))
+            {
+                throw new ArgumentException($"Liste de retrait introuvable : {path}");
+            }
+
+            return [.. File.ReadAllLines(path)
+                .Select(line => line.Trim())
+                .Where(line => line.Length > 0 && !line.StartsWith('#'))
+                .Select(ManifestService.NormalizeRelativePath)];
+        }
+
         private static void AddDirectory(
             Dictionary<string, ManifestEntry> entries,
             string directory,
             string remotePrefix,
-            Options options)
+            Options options,
+            string[] removals,
+            bool[] removalUsed)
         {
             string root = Path.GetFullPath(directory);
 
@@ -85,6 +123,25 @@ namespace SWGLLauncher.ManifestTool
 
                 if (IsExcluded(relative, options))
                 {
+                    continue;
+                }
+
+                // Retire avant de hacher : inutile de lire un fichier qui ne sera pas publie.
+                // Tous les motifs qui le couvrent sont marques, pas seulement le premier.
+                bool removed = false;
+
+                for (int i = 0; i < removals.Length; i++)
+                {
+                    if (ManifestService.MatchesPattern(relative, removals[i]))
+                    {
+                        removalUsed[i] = true;
+                        removed = true;
+                    }
+                }
+
+                if (removed)
+                {
+                    Console.WriteLine($"  - {relative} (retire)");
                     continue;
                 }
 
@@ -108,7 +165,10 @@ namespace SWGLLauncher.ManifestTool
         {
             string name = Path.GetFileName(relativePath);
 
+            // Le manifeste d'un canal vit a la racine de son dossier : il ne doit jamais se
+            // retrouver liste, quel que soit le nom du fichier que l'on est en train d'ecrire.
             if (name.Equals(Path.GetFileName(options.Output), StringComparison.OrdinalIgnoreCase)
+                || relativePath.Equals("manifest.json", StringComparison.OrdinalIgnoreCase)
                 || name.Equals("installed.json", StringComparison.OrdinalIgnoreCase)
                 || relativePath.EndsWith(".part", StringComparison.OrdinalIgnoreCase))
             {
@@ -162,6 +222,7 @@ namespace SWGLLauncher.ManifestTool
             public string Notes { get; private set; } = string.Empty;
             public string Output { get; private set; } = string.Empty;
             public List<string> Exclude { get; } = [];
+            public string? RemoveList { get; private set; }
 
             public static Options Parse(string[] args)
             {
@@ -196,6 +257,7 @@ namespace SWGLLauncher.ManifestTool
                         case "--notes": options.Notes = Next(); break;
                         case "--output": options.Output = Next(); break;
                         case "--exclude": options.Exclude.Add(Next()); break;
+                        case "--remove-list": options.RemoveList = Next(); break;
                         default: throw new ArgumentException($"Argument inconnu : {key}");
                     }
                 }
@@ -227,6 +289,8 @@ namespace SWGLLauncher.ManifestTool
                       --notes <texte>            Note de version
                       --output <fichier>         Fichier a ecrire (defaut : <source>/manifest.json)
                       --exclude <fragment>       Exclut les chemins contenant ce fragment
+                      --remove-list <fichier>    Fichiers de --base a retirer : un chemin ou un
+                                                 motif par ligne ("*" dans un dossier, "**" au-dela)
 
                     Exemples :
                       SWGLManifest --source C:\ftp\public --channel public

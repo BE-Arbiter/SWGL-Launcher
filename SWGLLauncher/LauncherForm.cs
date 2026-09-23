@@ -75,7 +75,6 @@ namespace SWGLLauncher
 
         // Menus conserves d'un affichage a l'autre.
         private ContextMenuStrip? _optionsMenu;
-        private ContextMenuStrip? _updateMenu;
 
         // Etat affiche dans la barre basse.
         private string _statusText = string.Empty;
@@ -98,7 +97,7 @@ namespace SWGLLauncher
         /// <summary>Vrai si la mise a jour est activee et un serveur est renseigne.</summary>
         private bool SyncConfigured =>
             _config.GetBool("sync.enabled", true)
-            && _config.GetString("ftp.host", string.Empty).Length > 0;
+            && _config.GetString("ftp.host", LauncherConfig.DefaultFtpHost).Length > 0;
 
         private string InstallRoot => _config.ResolvePath(_config.GetString("install.path", "."));
 
@@ -111,7 +110,7 @@ namespace SWGLLauncher
         /// </summary>
         private void ApplyConfiguration()
         {
-            Text = _config.GetString("window.title", "SWGL Launcher");
+            Text = _config.GetString("window.title", "Star Wars: Galactic Legacy");
 
             _designWidth = Math.Max(320, _config.GetInt("window.width", 960));
             _designHeight = Math.Max(180, _config.GetInt("window.height", 540));
@@ -277,7 +276,6 @@ namespace SWGLLauncher
         {
             _music.Dispose();
             _optionsMenu?.Dispose();
-            _updateMenu?.Dispose();
             BackgroundImage?.Dispose();
             BackgroundImage = null;
             base.OnFormClosed(e);
@@ -285,7 +283,7 @@ namespace SWGLLauncher
 
         private void StartMusic()
         {
-            if (Assets.Open(_config, "music.file", "SWGL/music.mp3") is not (Stream content, string extension))
+            if (Assets.Open(_config, "music.file", "SWGL/launcher_music.mp3") is not (Stream content, string extension))
             {
                 return;
             }
@@ -390,27 +388,18 @@ namespace SWGLLauncher
             var steamItem = new ToolStripMenuItem("Configure Steam launcher...");
             steamItem.Click += (_, _) => ConfigureSteamLauncher();
             menu.Items.Add(steamItem);
+            menu.Items.Add(new ToolStripSeparator());
 
-            // Le bouton est en bas de la fenetre : le menu s'ouvre vers le haut.
-            menu.Show(btnOptions, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
-        }
-
-        private void BtnUpdateDropDown_Click(object? sender, EventArgs e)
-        {
-            _updateMenu ??= CreateMenu();
-            ContextMenuStrip menu = _updateMenu;
-            ClearItems(menu);
-
-            var verifyItem = new ToolStripMenuItem("Verify only")
+            var integrityItem = new ToolStripMenuItem("Check integrity")
             {
                 Enabled = !_isSyncing && SyncConfigured,
                 ToolTipText = "Recompute every checksum and report what differs, without downloading.",
             };
+            integrityItem.Click += (_, _) => _ = RunSyncAsync(applyChanges: false, fullVerify: true);
+            menu.Items.Add(integrityItem);
 
-            verifyItem.Click += (_, _) => _ = RunSyncAsync(applyChanges: false, fullVerify: true);
-            menu.Items.Add(verifyItem);
-
-            menu.Show(btnUpdate, new Point(btnUpdate.Width, 0), ToolStripDropDownDirection.AboveLeft);
+            // Le bouton est en bas de la fenetre : le menu s'ouvre vers le haut.
+            menu.Show(btnOptions, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
         }
 
         private ToolStripMenuItem CreateChannelItem(string label, string code)
@@ -756,8 +745,8 @@ namespace SWGLLauncher
 
             IProgress<SyncProgress> progress = CreateProgress();
 
-            string mode = !applyChanges ? (fullVerify ? "Verify only" : "Check") : "Update";
-            string host = _config.GetString("ftp.host", string.Empty);
+            string mode = !applyChanges ? (fullVerify ? "Check integrity" : "Check") : "Update";
+            string host = _config.GetString("ftp.host", LauncherConfig.DefaultFtpHost);
             Log($"{mode} — channel {CurrentChannelLabel}, server {host}:{_config.GetInt("ftp.port", 21)}");
 
             try
@@ -897,7 +886,7 @@ namespace SWGLLauncher
             foreach ((string key, string fallback) in new[]
             {
                 ("background.image", "SWGL/background.png"),
-                ("music.file", "SWGL/music.mp3"),
+                ("music.file", "SWGL/launcher_music.mp3"),
                 ("steam.image.cover", "SWGL/cover.png"),
                 ("steam.image.wide", "SWGL/wide_cover.jpg"),
                 ("steam.image.logo", "SWGL/logo.png"),

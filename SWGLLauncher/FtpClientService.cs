@@ -32,11 +32,11 @@ namespace SWGLLauncher
         /// <param name="betaCode">Code de beta, ou null/vide pour le canal public.</param>
         public async Task ConnectAsync(string? betaCode, CancellationToken cancellationToken)
         {
-            string host = _config.GetString("ftp.host", string.Empty);
+            string host = _config.GetString("ftp.host", LauncherConfig.DefaultFtpHost);
             if (host.Length == 0)
             {
                 throw new InvalidOperationException(
-                    "No FTP server configured (ftp.host in launcher.properties).");
+                    "No FTP server configured (ftp.host is empty in launcher.properties).");
             }
 
             string user;
@@ -44,15 +44,15 @@ namespace SWGLLauncher
 
             if (string.IsNullOrWhiteSpace(betaCode))
             {
-                user = _config.GetString("ftp.public.user", "public");
-                password = _config.GetString("ftp.public.password", "public");
+                user = _config.GetString("ftp.public.user", "swgl-public");
+                password = _config.GetString("ftp.public.password", "swgl-public");
             }
             else
             {
                 // Le code de beta sert a la fois d'identifiant et de mot de passe :
                 // qui connait le code a de toute facon acces a la beta.
                 string code = betaCode.Trim();
-                user = _config.GetString("ftp.beta.user.prefix", "beta_") + code;
+                user = _config.GetString("ftp.beta.user.prefix", "swgl-") + code;
                 password = code;
             }
 

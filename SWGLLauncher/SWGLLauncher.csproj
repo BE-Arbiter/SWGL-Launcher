@@ -12,8 +12,7 @@
     <ApplicationIcon>swgl-sp.ico</ApplicationIcon>
 
     <!-- Un seul exe a la publication : runtime, dependances et symboles inclus,
-         bibliotheques natives comprises. Seuls launcher.properties et le dossier
-         SWGL restent a cote, puisqu'ils doivent rester modifiables. -->
+         bibliotheques natives comprises. Seul SWGL\launcher_music.mp3 reste a cote. -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -32,18 +31,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Fichiers de donnees : on ne les ecrase pas s'ils ont ete modifies a cote de l'exe.
-         ExcludeFromSingleFile est indispensable : sans lui le bundler embarque ces fichiers
-         dans l'exe et ils ne sont plus modifiables. -->
-    <None Update="launcher.properties">
+    <!-- Images embarquees dans l'executable. Un fichier pose a cote de l'exe au meme
+         chemin reste prioritaire. launcher.properties n'est pas livre : les valeurs par
+         defaut sont dans le code, le fichier ne sert qu'a les surcharger. -->
+    <None Remove="SWGL\**\*" />
+    <EmbeddedResource Include="SWGL\**\*" Exclude="SWGL\launcher_music.mp3" />
+
+    <!-- La musique est livree a part, dans SWGL\ a cote de l'exe. ExcludeFromSingleFile
+         est indispensable : sans lui le bundler l'avalerait dans l'executable. -->
+    <None Include="SWGL\launcher_music.mp3">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
-    <!-- Habillage embarque dans l'executable. Un fichier pose a cote de l'exe au chemin
-         indique dans launcher.properties reste prioritaire. -->
-    <None Remove="SWGL\**\*" />
-    <EmbeddedResource Include="SWGL\**\*" />
   </ItemGroup>
 
 </Project>

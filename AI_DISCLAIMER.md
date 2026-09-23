@@ -34,7 +34,8 @@ Claims below were checked by running code, not by inspection alone.
 - **Cleanup** — planning verified on a synthetic install: stray folders and obsolete `.pk3`
   removed, stock game files, `base/`, saves, player configuration and launcher files kept.
 - **Packaging** — published executable launched from a folder containing nothing but itself
-  and its configuration: window, embedded background and embedded music all load.
+  and `SWGL\launcher_music.mp3`, without any configuration file: window, embedded background and
+  music all load.
 - **Automatic recovery** — the test server was made to stall halfway through a transfer: the
   launcher hit the read timeout, reconnected, resumed at the right offset (`REST 100000`) and
   finished with a correct checksum.
@@ -52,7 +53,7 @@ Claims below were checked by running code, not by inspection alone.
 
 ## What was not verified
 
-- **`server/swgl-sync`**: `update` was tested with a stubbed manifest tool (branch discovery, arguments, exit codes); `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
+- **`server/swgl-sync`**: `update`, `exclude` and `restore` were tested with a stubbed manifest tool (branch discovery, arguments, list handling, path validation, exit codes), and `--remove-list` in the manifest tool on a real folder; `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
 - **Steam library rendering.** Artwork file names and the `shortcuts.vdf` format were verified,
   but no shortcut was ever written to a live Steam profile.
 - **Interface rendering on other DPI settings.** The window was checked at 100 % only.
@@ -63,7 +64,7 @@ Claims below were checked by running code, not by inspection alone.
   `SWGLLauncher.exe` listed in a manifest would fail to be replaced while running.
 - The cleanup deletes files. Its protection list (`sync.keep`) is a plain list of names and
   patterns — an install that does not match the expected layout should be checked with
-  *Verify only* before the first update.
+  *Check integrity* before the first update.
 
 ## Model
 

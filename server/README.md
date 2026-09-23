@@ -1,7 +1,7 @@
 # Serveur FTPS — Ubuntu 24.04
 
 Dépôt des fichiers du jeu : un canal public, des canaux beta, un compte de publication.
-Serveur : `93.127.203.21`.
+Serveur : `vps-c2b14a7e.vps.ovh.net`.
 
 Rien de ce qui suit n'a été vérifié sur la machine depuis ce poste — les commandes sont à
 valider sur place.
@@ -14,8 +14,8 @@ valider sur place.
 | Canal public | `swgl-public` | `swgl-public` | `/srv/swgl/base` (lecture seule) |
 | Beta `<code>` | `swgl-<code>` | `<code>` | `/srv/swgl/beta-<code>` (lecture seule) |
 
-Le préfixe `swgl-` des comptes doit rester identique à `ftp.beta.user.prefix` dans
-`launcher.properties` : le testeur ne tape que le code, le launcher reconstitue le compte.
+Le préfixe `swgl-` des comptes doit rester identique à `ftp.beta.user.prefix`
+(défaut du launcher) : le testeur ne tape que le code, le launcher reconstitue le compte.
 
 ```
 /srv/swgl/                    ← racine de swgl-dev
@@ -80,7 +80,7 @@ sudo install -d -m 700 /etc/proftpd/ssl
 sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
      -keyout /etc/proftpd/ssl/swgl.key \
      -out    /etc/proftpd/ssl/swgl.crt \
-     -subj "/CN=93.127.203.21"
+     -subj "/CN=vps-c2b14a7e.vps.ovh.net"
 sudo chmod 600 /etc/proftpd/ssl/swgl.key
 ```
 
@@ -155,6 +155,8 @@ pour le compiler en `linux-x64`).
 | `swgl-sync update <branche> [version]` | Régénère une seule branche : `public` ou un code de beta. |
 | `swgl-sync create <code>` | Crée une beta. |
 | `swgl-sync remove <code>` | Ferme une beta ; ses fichiers restent sur le disque. |
+| `swgl-sync exclude <code> [chemin...]` | Retire des fichiers de `base` pour cette beta ; sans chemin, affiche la liste. |
+| `swgl-sync restore <code> <chemin...>` | Annule un retrait. |
 
 Sans version, c'est la date du jour (`2026.09.22.2143`).
 
@@ -184,6 +186,33 @@ Le testeur voit alors :
 /manifest.json         celui de la beta
 ```
 
+### Retirer des fichiers de `base` pour une beta
+
+Une beta peut ajouter ou remplacer des fichiers en les déposant dans son dossier ; pour en
+**retirer** un que `base` fournit, on le marque :
+
+```bash
+sudo swgl-sync exclude elween SWGL/SWGL_Missions_Ep8.pk3 "SWGL/SWGL_Old_*.pk3"
+sudo swgl-sync exclude elween          # affiche la liste
+sudo swgl-sync restore elween SWGL/SWGL_Missions_Ep8.pk3
+sudo swgl-sync update  elween          # applique
+```
+
+Les chemins sont relatifs au GameData. `*` reste dans un dossier, `**` le traverse ; un motif
+se met entre guillemets pour que le shell ne l'interprète pas. La liste est stockée dans
+`/srv/swgl/beta-elween.remove`, hors du dossier de la beta : ni publiée, ni visible des
+testeurs.
+
+Le retrait ne porte que sur `base` : un fichier déposé dans le dossier de la beta elle-même
+reste publié. Un chemin qui ne correspond à rien est signalé, au marquage comme à la mise à
+jour — c'est presque toujours une faute de frappe.
+
+Côté launcher, rien de spécial : le fichier ne figure plus au manifeste de la beta, il est
+donc supprimé chez le testeur, puis retéléchargé s'il repasse en public.
+
+Cette fonction demande un `SWGLManifest` récent (option `--remove-list`) : l'ancien répond
+`Argument inconnu`.
+
 ### Mettre à jour `base`
 
 Chaque manifeste de beta embarque aussi les fichiers de `base`, avec leur empreinte. Après une
@@ -199,9 +228,9 @@ complète prend quelques minutes par branche.
 ```bash
 sudo apt install lftp
 
-lftp -u swgl-public,swgl-public -e "set ssl:verify-certificate no; ls; quit" ftp://93.127.203.21
-lftp -u swgl-elween,elween      -e "set ssl:verify-certificate no; ls; ls base; quit" ftp://93.127.203.21
-lftp -u swgl-dev,MDP            -e "set ssl:verify-certificate no; put /etc/hostname -o t.txt; rm t.txt; quit" ftp://93.127.203.21
+lftp -u swgl-public,swgl-public -e "set ssl:verify-certificate no; ls; quit" ftp://vps-c2b14a7e.vps.ovh.net
+lftp -u swgl-elween,elween      -e "set ssl:verify-certificate no; ls; ls base; quit" ftp://vps-c2b14a7e.vps.ovh.net
+lftp -u swgl-dev,MDP            -e "set ssl:verify-certificate no; put /etc/hostname -o t.txt; rm t.txt; quit" ftp://vps-c2b14a7e.vps.ovh.net
 ```
 
 Les trois contrôles qui comptent : le public ne voit **pas** les dossiers de beta, une beta ne
@@ -229,8 +258,11 @@ sudo fail2ban-client status proftpd
 
 ## 11. Côté launcher
 
+Ce sont les valeurs par défaut du launcher : aucun `launcher.properties` n'est nécessaire.
+À n'écrire que pour s'en écarter.
+
 ```properties
-ftp.host=93.127.203.21
+ftp.host=vps-c2b14a7e.vps.ovh.net
 ftp.port=21
 ftp.tls=explicit
 ftp.accept.any.certificate=true
