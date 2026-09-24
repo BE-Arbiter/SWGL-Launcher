@@ -92,6 +92,16 @@ def list_lines(path):
         return []
 
 
+def role_names():
+    """Names from the roles file ("Name=id"), for --notify-ping."""
+    names = []
+    for line in list_lines(os.path.join(ROOT, "discord-roles.conf")):
+        name, separator, value = line.partition("=")
+        if separator and not line.startswith("#") and value.strip().isdigit():
+            names.append(name.strip())
+    return sorted(names, key=str.lower)
+
+
 def paths_under(folder, prefix):
     """Relative paths under a folder completing a prefix, folder by folder."""
     head, _, tail = prefix.rpartition("/")
@@ -153,9 +163,12 @@ def candidates(words, current):
             values = []
         return [value for value in values if value.startswith(current)]
 
-    # Free text: a label, a role (its names are in a root-only file), or the
-    # message of --notify (which may also be skipped).
-    if previous in ("--label", "--notify-ping") or (previous == "--notify" and not current.startswith("-")):
+    # A role for --notify-ping: a name from the roles file (or an id, not completed).
+    if previous == "--notify-ping":
+        return [name for name in role_names() if name.lower().startswith(current.lower())]
+
+    # Free text: a label, or the message of --notify (which may also be skipped).
+    if previous == "--label" or (previous == "--notify" and not current.startswith("-")):
         return []
 
     # --notify-ping may be repeated; the others are offered once.

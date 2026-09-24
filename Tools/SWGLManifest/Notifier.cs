@@ -90,8 +90,10 @@ namespace SWGLLauncher.ManifestTool
         /// <param name="changesDirectory">Un "&lt;branche&gt;.json" par branche regeneree.</param>
         /// <param name="message">Texte libre place en tete, ou null. Jamais analyse : un "@" y reste du texte.</param>
         /// <param name="pings">Roles a mentionner : nom declare dans la configuration, ou identifiant.</param>
-        /// <param name="configPath">Fichier cle=valeur : webhook et noms de roles.</param>
-        public static int Publish(string changesDirectory, string? message, IReadOnlyList<string> pings, string configPath)
+        /// <param name="configPath">Fichier cle=valeur : webhook (et anciens "role.Nom=id").</param>
+        /// <param name="rolesPath">Fichier "Nom=id" des roles mentionnables par leur nom, ou null.</param>
+        public static int Publish(
+            string changesDirectory, string? message, IReadOnlyList<string> pings, string configPath, string? rolesPath)
         {
             Dictionary<string, string> config = LoadConfig(configPath);
 
@@ -115,7 +117,7 @@ namespace SWGLLauncher.ManifestTool
             }
 
             // Les roles a mentionner, et eux seuls : jamais @everyone, @here ni un utilisateur.
-            List<string> mentioned = ResolveRoles(pings, config, configPath);
+            List<string> mentioned = ResolveRoles(pings, LoadRoles(config, rolesPath));
 
             string header = string.Join(" ", mentioned.Select(id => $"<@&{id}>"));
             if (!string.IsNullOrWhiteSpace(message))
@@ -234,10 +236,37 @@ namespace SWGLLauncher.ManifestTool
             count == 1 ? "1 file" : $"{count.ToString(CultureInfo.InvariantCulture)} files";
 
         /// <summary>
-        /// Identifiants des roles a mentionner. Un identifiant numerique est pris tel quel ; un
-        /// nom doit etre declare dans la configuration ("role.Testers=&lt;id&gt;").
+        /// Roles connus par leur nom : le fichier des roles ("Testers=&lt;id&gt;"), puis les anciennes
+        /// entrees "role.Testers=&lt;id&gt;" de la configuration.
         /// </summary>
-        public static List<string> ResolveRoles(IReadOnlyList<string> pings, Dictionary<string, string> config, string configPath)
+        private static Dictionary<string, string> LoadRoles(Dictionary<string, string> config, string? rolesPath)
+        {
+            var roles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach ((string key, string value) in config)
+            {
+                if (key.StartsWith("role.", StringComparison.OrdinalIgnoreCase))
+                {
+                    roles[key[5..]] = value;
+                }
+            }
+
+            if (rolesPath is not null && File.Exists(rolesPath))
+            {
+                foreach ((string key, string value) in LoadConfig(rolesPath))
+                {
+                    roles[key] = value;
+                }
+            }
+
+            return roles;
+        }
+
+        /// <summary>
+        /// Identifiants des roles a mentionner. Un identifiant numerique est pris tel quel ; un
+        /// nom doit figurer parmi les roles connus.
+        /// </summary>
+        private static List<string> ResolveRoles(IReadOnlyList<string> pings, Dictionary<string, string> roles)
         {
             var ids = new List<string>();
 
@@ -249,13 +278,13 @@ namespace SWGLLauncher.ManifestTool
                 {
                     ids.Add(value);
                 }
-                else if (config.TryGetValue($"role.{value}", out string? id) && id.Length > 0 && id.All(char.IsAsciiDigit))
+                else if (roles.TryGetValue(value, out string? id) && id.Length > 0 && id.All(char.IsAsciiDigit))
                 {
                     ids.Add(id);
                 }
                 else
                 {
-                    throw new ArgumentException($"Role inconnu : {ping} (a declarer dans {configPath} : role.{value}=<identifiant>)");
+                    throw new ArgumentException($"Role inconnu : {ping} (a declarer : {value}=<identifiant>)");
                 }
             }
 

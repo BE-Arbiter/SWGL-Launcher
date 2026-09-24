@@ -21,7 +21,8 @@
 # --notify posts one Discord message for the manifests that changed, through the
 # webhook set in /etc/swgl-sync.conf (root only):
 #   webhook=https://discord.com/api/webhooks/...
-#   role.Testers=123456789012345678       --notify-ping Testers pings this role
+# --notify-ping mentions a role: its id, or a name from /srv/swgl/discord-roles.conf:
+#   Testers=123456789012345678
 # ==============================================================================
 set -euo pipefail
 
@@ -31,6 +32,9 @@ GROUP=swgl
 OWNER=swgl-dev
 BETAS_CONF=/etc/proftpd/conf.d/swgl-betas.conf
 CONFIG=/etc/swgl-sync.conf
+# Discord roles pinged by name with --notify-ping, one "Name=id" per line. Not a
+# secret: kept in the FTP root so swgl-dev can edit it and the prompt complete it.
+ROLES=$ROOT/discord-roles.conf
 MANIFEST_TOOL=${MANIFEST_TOOL:-SWGLManifest}
 
 # Account prefix: must match the launcher's ftp.beta.user.prefix.
@@ -51,8 +55,8 @@ usage:
         regenerate one branch, or public then every beta without --branch;
         without --label the current label is kept; --notify posts one Discord
         message for the branches that changed, the message first if given;
-        --notify-ping (repeatable) mentions a role declared in $CONFIG, or a
-        role id; the message itself is never parsed for mentions
+        --notify-ping (repeatable) mentions a role: a name from $ROLES,
+        or a role id; the message itself is never parsed for mentions
   swgl-sync rename --branch <b> --label "<l>"
         change the label players see, nothing is recalculated
   swgl-sync create --branch <code>          create a beta
@@ -186,6 +190,16 @@ ensure_patchnotes() {
     local file
     file=$(patchnotes_file "$1")
     [[ -e "$file" ]] || install -o "$OWNER" -g "$GROUP" -m 644 /dev/null "$file"
+}
+
+# The roles file always exists, owned by swgl-dev so it can be edited over FTP.
+ensure_roles() {
+    [[ -e "$ROLES" ]] && return 0
+    install -o "$OWNER" -g "$GROUP" -m 644 /dev/null "$ROLES"
+    cat > "$ROLES" <<EOF
+# Discord roles for "swgl-sync update --notify-ping <Name>": one Name=role-id per line.
+# A role id: Discord developer mode, then right-click the role > Copy Role ID.
+EOF
 }
 
 # Betas created before patch notes existed lack the alias: add it to their block.
@@ -330,20 +344,23 @@ cmd_update() {
     [[ -z "$BRANCH" ]] || require_branch "$BRANCH"
 
     [[ ${#PINGS[@]} -eq 0 || $NOTIFY -eq 1 ]] || die "--notify-ping needs --notify"
+    ensure_roles
 
     if [[ $NOTIFY -eq 1 ]]; then
         # Checked first: better to refuse now than after a long update.
         grep -Eq '^[[:space:]]*webhook[[:space:]]*=[[:space:]]*[^[:space:]]' "$CONFIG" 2>/dev/null \
             || die "--notify needs webhook=... in $CONFIG"
 
-        # A role is an identifier, or a name declared in the configuration.
+        # A role is an identifier, or a name from the roles file (or, as before,
+        # role.<name>= in the configuration).
         local ping name
         for ping in "${PINGS[@]}"; do
             name=${ping#@}
             [[ "$name" =~ ^[0-9]+$ ]] && continue
             [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid role: $ping"
-            grep -Eiq "^[[:space:]]*role\.$name[[:space:]]*=[[:space:]]*[0-9]+[[:space:]]*\$" "$CONFIG" \
-                || die "unknown role: $ping (declare role.$name=<id> in $CONFIG, or give the role id)"
+            grep -Eiqs "^[[:space:]]*$name[[:space:]]*=[[:space:]]*[0-9]+[[:space:]]*\$" "$ROLES" \
+                || grep -Eiqs "^[[:space:]]*role\.$name[[:space:]]*=[[:space:]]*[0-9]+[[:space:]]*\$" "$CONFIG" \
+                || die "unknown role: $ping (add $name=<id> to $ROLES, or give the role id)"
         done
 
         CHANGES_DIR=$(mktemp -d)
@@ -378,7 +395,7 @@ cmd_update() {
         done
 
         echo "== Discord"
-        "$MANIFEST_TOOL" --notify "$CHANGES_DIR" "${message[@]}" --config "$CONFIG"
+        "$MANIFEST_TOOL" --notify "$CHANGES_DIR" "${message[@]}" --config "$CONFIG" --roles "$ROLES"
     fi
 }
 

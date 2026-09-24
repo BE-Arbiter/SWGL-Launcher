@@ -20,6 +20,7 @@ Le préfixe `swgl-` des comptes doit rester identique à `ftp.beta.user.prefix`
 ```
 /srv/swgl/                    ← racine de swgl-dev
 ├── base/                     commun à tous les canaux
+├── discord-roles.conf        rôles Discord mentionnables par leur nom
 ├── manifest-public.json      manifeste du canal public
 ├── patchnotes-public.md      notes de version du public
 ├── beta-elween/              fichiers d'une beta
@@ -333,23 +334,34 @@ Branch updated: public — Release 3
 - Sans changement, rien n'est envoyé. Sans message, seul le résumé part.
 - Le détail fichier par fichier est dans `changes.txt`, joint au message : Discord en montre un
   aperçu dépliable.
-- `--notify-ping <rôle>` mentionne un rôle en tête du message : un nom déclaré dans la
-  configuration (`role.Testers=…`) ou directement l'identifiant du rôle, ce qui permet d'en
-  mentionner n'importe lequel sans le déclarer. L'option se répète pour plusieurs rôles. Un nom
+- `--notify-ping <rôle>` mentionne un rôle en tête du message : un nom du fichier des rôles
+  (ci-dessous) ou directement l'identifiant du rôle, ce qui permet d'en mentionner n'importe
+  lequel sans le déclarer. L'option se répète pour plusieurs rôles. Un nom
   inconnu est refusé avant toute régénération.
 - Le texte du message n'est jamais analysé : un `@` y reste du texte, et Discord ne sonne que
   pour les rôles passés par `--notify-ping` (jamais `@everyone` ni `@here`).
 
-La configuration tient dans `/etc/swgl-sync.conf`, lisible par root seul — l'URL du webhook
-permet à quiconque la connaît de publier dans le salon :
+Le webhook tient dans `/etc/swgl-sync.conf`, lisible par root seul — son URL permet à quiconque
+la connaît de publier dans le salon :
 
 ```bash
 sudo tee /etc/swgl-sync.conf >/dev/null <<'EOF'
 webhook=https://discord.com/api/webhooks/<id>/<jeton>
-role.Testers=123456789012345678
 EOF
 sudo chmod 600 /etc/swgl-sync.conf
 ```
+
+Les rôles, eux, ne sont pas secrets : ils sont dans `/srv/swgl/discord-roles.conf`, à la racine
+FTP de `swgl-dev`, qui peut l'éditer ou le déposer par FTP. Une ligne par rôle :
+
+```
+Testers=123456789012345678
+Players=234567890123456789
+```
+
+`swgl-sync update` crée ce fichier (vide) s'il n'existe pas, et l'invite `swgl-sync>` complète
+ses noms après `--notify-ping`. La casse du nom est indifférente. Les anciennes lignes
+`role.Testers=…` de `/etc/swgl-sync.conf` restent acceptées.
 
 Le webhook se crée dans Discord : *Paramètres du salon → Intégrations → Webhooks*. L'identifiant
 d'un rôle se copie par clic droit sur le rôle, une fois le *mode développeur* activé
