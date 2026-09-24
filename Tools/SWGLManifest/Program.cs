@@ -43,7 +43,7 @@ namespace SWGLLauncher.ManifestTool
 
             if (options.NotifyDirectory is not null)
             {
-                return Notifier.Publish(options.NotifyDirectory, options.Message, options.ConfigPath);
+                return Notifier.Publish(options.NotifyDirectory, options.Message, options.Pings, options.ConfigPath);
             }
 
             var manifest = new Manifest
@@ -389,6 +389,7 @@ namespace SWGLLauncher.ManifestTool
             public string? ChangesFile { get; private set; }
             public string? NotifyDirectory { get; private set; }
             public string? Message { get; private set; }
+            public List<string> Pings { get; } = [];
             public string ConfigPath { get; private set; } = "/etc/swgl-sync.conf";
             public bool Relabel { get; private set; }
             public string Notes { get; private set; } = string.Empty;
@@ -431,6 +432,7 @@ namespace SWGLLauncher.ManifestTool
                         case "--changes": options.ChangesFile = Next(); break;
                         case "--notify": options.NotifyDirectory = Next(); break;
                         case "--message": options.Message = Next(); break;
+                        case "--ping": options.Pings.Add(Next()); break;
                         case "--config": options.ConfigPath = Next(); break;
                         case "--channel": options.Channel = Next(); break;
                         case "--version": options.Version = Next(); break;
@@ -500,8 +502,9 @@ namespace SWGLLauncher.ManifestTool
 
                     Annonce Discord des branches modifiees (au lieu de generer) :
                       --notify <dossier>         Dossier des fichiers --changes, un "<branche>.json" par branche
-                      --message <texte>          Texte place en tete ; @Role devient une mention si le role
-                                                 est declare dans la configuration
+                      --message <texte>          Texte place en tete, tel quel
+                      --ping <role>              Role a mentionner en tete : nom declare dans la configuration
+                                                 ou identifiant ; repetable
                       --config <fichier>         webhook=... et role.<Nom>=<id> (defaut : /etc/swgl-sync.conf)
 
                     Exemples :

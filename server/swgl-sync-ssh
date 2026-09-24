@@ -27,7 +27,7 @@ DIR_PREFIX = "beta-"
 
 # Command -> its options, and what --branch takes: any branch, a beta, or a new code.
 COMMANDS = {
-    "update": (["--branch", "--label", "--notify"], "branch"),
+    "update": (["--branch", "--label", "--notify", "--notify-ping"], "branch"),
     "rename": (["--branch", "--label"], "branch"),
     "create": (["--branch"], None),
     "remove": (["--branch"], "beta"),
@@ -153,11 +153,13 @@ def candidates(words, current):
             values = []
         return [value for value in values if value.startswith(current)]
 
-    # Free text: a label, or the message of --notify (which may also be skipped).
-    if previous == "--label" or (previous == "--notify" and not current.startswith("-")):
+    # Free text: a label, a role (its names are in a root-only file), or the
+    # message of --notify (which may also be skipped).
+    if previous in ("--label", "--notify-ping") or (previous == "--notify" and not current.startswith("-")):
         return []
 
-    unused = [option for option in options if option not in words]
+    # --notify-ping may be repeated; the others are offered once.
+    unused = [option for option in options if option == "--notify-ping" or option not in words]
 
     if current.startswith("-") or command not in PATH_COMMANDS:
         return [option for option in unused if option.startswith(current)]

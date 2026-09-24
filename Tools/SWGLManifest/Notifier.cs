@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 
 namespace SWGLLauncher.ManifestTool
 {
@@ -89,9 +88,10 @@ namespace SWGLLauncher.ManifestTool
         private const string Public = "public";
 
         /// <param name="changesDirectory">Un "&lt;branche&gt;.json" par branche regeneree.</param>
-        /// <param name="message">Texte libre place en tete, ou null.</param>
-        /// <param name="configPath">Fichier cle=valeur : webhook et roles mentionnables.</param>
-        public static int Publish(string changesDirectory, string? message, string configPath)
+        /// <param name="message">Texte libre place en tete, ou null. Jamais analyse : un "@" y reste du texte.</param>
+        /// <param name="pings">Roles a mentionner : nom declare dans la configuration, ou identifiant.</param>
+        /// <param name="configPath">Fichier cle=valeur : webhook et noms de roles.</param>
+        public static int Publish(string changesDirectory, string? message, IReadOnlyList<string> pings, string configPath)
         {
             Dictionary<string, string> config = LoadConfig(configPath);
 
@@ -114,13 +114,14 @@ namespace SWGLLauncher.ManifestTool
                 return 0;
             }
 
-            // Seuls les roles declares dans la configuration peuvent etre mentionnes.
-            var roles = config
-                .Where(pair => pair.Key.StartsWith("role.", StringComparison.OrdinalIgnoreCase))
-                .ToDictionary(pair => pair.Key[5..], pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+            // Les roles a mentionner, et eux seuls : jamais @everyone, @here ni un utilisateur.
+            List<string> mentioned = ResolveRoles(pings, config, configPath);
 
-            var mentioned = new List<string>();
-            string header = message is null ? string.Empty : Mention(message.Trim(), roles, mentioned);
+            string header = string.Join(" ", mentioned.Select(id => $"<@&{id}>"));
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                header = header.Length > 0 ? $"{header} {message.Trim()}" : message.Trim();
+            }
 
             var summary = new StringBuilder();
             var details = new StringBuilder();
@@ -232,19 +233,33 @@ namespace SWGLLauncher.ManifestTool
         private static string Count(int count) =>
             count == 1 ? "1 file" : $"{count.ToString(CultureInfo.InvariantCulture)} files";
 
-        /// <summary>"@Nom" devient une mention si le role est declare, sinon reste du texte.</summary>
-        private static string Mention(string message, Dictionary<string, string> roles, List<string> mentioned)
+        /// <summary>
+        /// Identifiants des roles a mentionner. Un identifiant numerique est pris tel quel ; un
+        /// nom doit etre declare dans la configuration ("role.Testers=&lt;id&gt;").
+        /// </summary>
+        public static List<string> ResolveRoles(IReadOnlyList<string> pings, Dictionary<string, string> config, string configPath)
         {
-            return Regex.Replace(message, @"@([\p{L}\p{N}_\-]+)", match =>
-            {
-                if (!roles.TryGetValue(match.Groups[1].Value, out string? id))
-                {
-                    return match.Value;
-                }
+            var ids = new List<string>();
 
-                mentioned.Add(id);
-                return $"<@&{id}>";
-            });
+            foreach (string ping in pings)
+            {
+                string value = ping.Trim().TrimStart('@');
+
+                if (value.Length > 0 && value.All(char.IsAsciiDigit))
+                {
+                    ids.Add(value);
+                }
+                else if (config.TryGetValue($"role.{value}", out string? id) && id.Length > 0 && id.All(char.IsAsciiDigit))
+                {
+                    ids.Add(id);
+                }
+                else
+                {
+                    throw new ArgumentException($"Role inconnu : {ping} (a declarer dans {configPath} : role.{value}=<identifiant>)");
+                }
+            }
+
+            return [.. ids.Distinct()];
         }
 
         /// <summary>Tronque sous la limite de Discord ; le detail complet reste dans le fichier joint.</summary>

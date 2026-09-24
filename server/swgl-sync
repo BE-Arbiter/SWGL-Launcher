@@ -2,7 +2,7 @@
 # ==============================================================================
 # swgl-sync — manages the branches of the SWGL FTP repository: public and betas.
 #
-#   swgl-sync update [--branch <b>] [--label "<l>"] [--notify ["<message>"]]
+#   swgl-sync update [--branch <b>] [--label "<l>"] [--notify ["<message>"]] [--notify-ping <role>]
 #   swgl-sync rename --branch <b> --label "<l>"
 #   swgl-sync create --branch <code>
 #   swgl-sync remove --branch <code>
@@ -21,7 +21,7 @@
 # --notify posts one Discord message for the manifests that changed, through the
 # webhook set in /etc/swgl-sync.conf (root only):
 #   webhook=https://discord.com/api/webhooks/...
-#   role.Testers=123456789012345678       @Testers in a message pings this role
+#   role.Testers=123456789012345678       --notify-ping Testers pings this role
 # ==============================================================================
 set -euo pipefail
 
@@ -47,10 +47,12 @@ die() {
 usage() {
     cat >&2 <<EOF
 usage:
-  swgl-sync update [--branch <b>] [--label "<l>"] [--notify ["<message>"]]
+  swgl-sync update [--branch <b>] [--label "<l>"] [--notify ["<message>"]] [--notify-ping <role>]
         regenerate one branch, or public then every beta without --branch;
         without --label the current label is kept; --notify posts one Discord
-        message for the branches that changed, the message first if given
+        message for the branches that changed, the message first if given;
+        --notify-ping (repeatable) mentions a role declared in $CONFIG, or a
+        role id; the message itself is never parsed for mentions
   swgl-sync rename --branch <b> --label "<l>"
         change the label players see, nothing is recalculated
   swgl-sync create --branch <code>          create a beta
@@ -82,6 +84,7 @@ NOTIFY=0
 MESSAGE=""
 HAS_LABEL=0
 HAS_MESSAGE=0
+PINGS=()
 PATHS=()
 
 parse_options() {
@@ -108,6 +111,11 @@ parse_options() {
                     shift
                 fi
                 ;;
+            --notify-ping)
+                [[ $# -ge 2 && -n "$2" ]] || die "--notify-ping needs a role"
+                PINGS+=("$2")
+                shift 2
+                ;;
             --*)
                 die "unknown option: $1"
                 ;;
@@ -125,6 +133,7 @@ allow_only() {
     [[ -z "$BRANCH" || "$allowed" == *" branch "* ]] || die "--branch is not used by this command"
     [[ $HAS_LABEL -eq 0 || "$allowed" == *" label "* ]] || die "--label is not used by this command"
     [[ $NOTIFY -eq 0 || "$allowed" == *" notify "* ]] || die "--notify is not used by this command"
+    [[ ${#PINGS[@]} -eq 0 || "$allowed" == *" notify "* ]] || die "--notify-ping is not used by this command"
     [[ ${#PATHS[@]} -eq 0 || "$allowed" == *" paths "* ]] || die "unexpected argument: ${PATHS[0]}"
 }
 
@@ -320,10 +329,22 @@ cmd_update() {
     [[ $HAS_LABEL -eq 0 || -n "$BRANCH" ]] || die "--label needs --branch"
     [[ -z "$BRANCH" ]] || require_branch "$BRANCH"
 
+    [[ ${#PINGS[@]} -eq 0 || $NOTIFY -eq 1 ]] || die "--notify-ping needs --notify"
+
     if [[ $NOTIFY -eq 1 ]]; then
         # Checked first: better to refuse now than after a long update.
         grep -Eq '^[[:space:]]*webhook[[:space:]]*=[[:space:]]*[^[:space:]]' "$CONFIG" 2>/dev/null \
             || die "--notify needs webhook=... in $CONFIG"
+
+        # A role is an identifier, or a name declared in the configuration.
+        local ping name
+        for ping in "${PINGS[@]}"; do
+            name=${ping#@}
+            [[ "$name" =~ ^[0-9]+$ ]] && continue
+            [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid role: $ping"
+            grep -Eiq "^[[:space:]]*role\.$name[[:space:]]*=[[:space:]]*[0-9]+[[:space:]]*\$" "$CONFIG" \
+                || die "unknown role: $ping (declare role.$name=<id> in $CONFIG, or give the role id)"
+        done
 
         CHANGES_DIR=$(mktemp -d)
         trap 'rm -rf "$CHANGES_DIR"' EXIT
@@ -351,6 +372,10 @@ cmd_update() {
     if [[ $NOTIFY -eq 1 ]]; then
         local message=()
         [[ $HAS_MESSAGE -eq 1 ]] && message=(--message "$MESSAGE")
+        local ping
+        for ping in "${PINGS[@]}"; do
+            message+=(--ping "$ping")
+        done
 
         echo "== Discord"
         "$MANIFEST_TOOL" --notify "$CHANGES_DIR" "${message[@]}" --config "$CONFIG"

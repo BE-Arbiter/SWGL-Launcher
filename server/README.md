@@ -157,8 +157,8 @@ pour le compiler en `linux-x64`).
 
 | Commande | Effet |
 | --- | --- |
-| `swgl-sync update [--notify ["<message>"]]` | Régénère le manifeste du public, puis celui de chaque beta. |
-| `swgl-sync update --branch <branche> [--label "<libellé>"] [--notify ["<message>"]]` | Régénère une seule branche : `public` ou un code de beta. |
+| `swgl-sync update [--notify ["<message>"]] [--notify-ping <rôle>]` | Régénère le manifeste du public, puis celui de chaque beta. |
+| `swgl-sync update --branch <branche> [--label "<libellé>"] [--notify ["<message>"]] [--notify-ping <rôle>]` | Régénère une seule branche : `public` ou un code de beta. |
 | `swgl-sync rename --branch <branche> --label "<libellé>"` | Change le libellé affiché aux joueurs, sans rien recalculer. |
 | `swgl-sync create --branch <code>` | Crée une beta. |
 | `swgl-sync remove --branch <code>` | Ferme une beta ; ses fichiers restent sur le disque. |
@@ -310,7 +310,7 @@ sudo proftpd --configtest && sudo systemctl reload proftpd
 liste celles dont le manifeste a changé :
 
 ```bash
-sudo swgl-sync update --notify "@Testers New map: Kashyyyk"
+sudo swgl-sync update --notify "New map: Kashyyyk" --notify-ping Testers
 sudo swgl-sync update --branch elween --label "Ep3 test 5" --notify
 ```
 
@@ -333,8 +333,12 @@ Branch updated: public — Release 3
 - Sans changement, rien n'est envoyé. Sans message, seul le résumé part.
 - Le détail fichier par fichier est dans `changes.txt`, joint au message : Discord en montre un
   aperçu dépliable.
-- `@Nom` devient une vraie mention seulement si le rôle est déclaré dans la configuration ;
-  aucune autre mention n'est jamais envoyée (pas de `@everyone` par accident).
+- `--notify-ping <rôle>` mentionne un rôle en tête du message : un nom déclaré dans la
+  configuration (`role.Testers=…`) ou directement l'identifiant du rôle, ce qui permet d'en
+  mentionner n'importe lequel sans le déclarer. L'option se répète pour plusieurs rôles. Un nom
+  inconnu est refusé avant toute régénération.
+- Le texte du message n'est jamais analysé : un `@` y reste du texte, et Discord ne sonne que
+  pour les rôles passés par `--notify-ping` (jamais `@everyone` ni `@here`).
 
 La configuration tient dans `/etc/swgl-sync.conf`, lisible par root seul — l'URL du webhook
 permet à quiconque la connaît de publier dans le salon :
@@ -382,7 +386,7 @@ ssh swgl-dev@vps-c2b14a7e.vps.ovh.net update --branch elween
 
 À l'invite, les flèches ↑/↓ parcourent l'historique de la session, ←/→ et Début/Fin
 éditent la ligne, Ctrl+R cherche dans l'historique, et Tab complète les commandes, leurs
-options (`--branch`, `--label`, `--notify`), les branches et les chemins (fichiers de `base` et de la beta, entrées des listes pour `restore`
+options (`--branch`, `--label`, `--notify`, `--notify-ping`), les branches et les chemins (fichiers de `base` et de la beta, entrées des listes pour `restore`
 et `cancel-delete`). Le `swgl-sync` devant la commande est facultatif. Une ligne n'est jamais
 interprétée par un shell, seulement découpée en mots, les guillemets groupant des mots
 (`"Ep3 test 4"`) : `$(...)`, `;` ou `*` restent du texte. Ctrl+C interrompt la commande en
