@@ -119,11 +119,13 @@ namespace SWGLLauncher.ManifestTool
             // Les roles a mentionner, et eux seuls : jamais @everyone, @here ni un utilisateur.
             List<string> mentioned = ResolveRoles(pings, LoadRoles(config, rolesPath));
 
-            string header = string.Join(" ", mentioned.Select(id => $"<@&{id}>"));
-            if (!string.IsNullOrWhiteSpace(message))
-            {
-                header = header.Length > 0 ? $"{header} {message.Trim()}" : message.Trim();
-            }
+            // Le message tel quel (Discord en interprete le Markdown), les mentions a la fin.
+            // "\n" tape dans le message devient un retour a la ligne : c'est le seul moyen d'en
+            // mettre depuis l'invite swgl-sync>, qui ne lit qu'une ligne.
+            string header = string.IsNullOrWhiteSpace(message)
+                ? string.Empty
+                : message.Replace("\\n", "\n", StringComparison.Ordinal).Trim();
+            string footer = string.Join(" ", mentioned.Select(id => $"<@&{id}>"));
 
             var summary = new StringBuilder();
             var details = new StringBuilder();
@@ -160,7 +162,15 @@ namespace SWGLLauncher.ManifestTool
             }
 
             string content = header.Length > 0 ? $"{header}\n\n{summary}" : summary.ToString();
-            content = Truncate(content.TrimEnd());
+
+            // Les mentions ne doivent jamais etre coupees : la troncature se fait avant elles.
+            int room = MaxContentLength - (footer.Length > 0 ? footer.Length + 2 : 0);
+            content = Truncate(content.TrimEnd(), room);
+
+            if (footer.Length > 0)
+            {
+                content += $"\n\n{footer}";
+            }
 
             var payload = new
             {
@@ -292,17 +302,17 @@ namespace SWGLLauncher.ManifestTool
         }
 
         /// <summary>Tronque sous la limite de Discord ; le detail complet reste dans le fichier joint.</summary>
-        private static string Truncate(string content)
+        private static string Truncate(string content, int maxLength)
         {
             const string more = "\n… (see changes.txt)";
 
-            if (content.Length <= MaxContentLength)
+            if (content.Length <= maxLength)
             {
                 return content;
             }
 
-            int cut = content.LastIndexOf('\n', MaxContentLength - more.Length);
-            return content[..(cut > 0 ? cut : MaxContentLength - more.Length)] + more;
+            int cut = content.LastIndexOf('\n', maxLength - more.Length);
+            return content[..(cut > 0 ? cut : maxLength - more.Length)] + more;
         }
 
         private static Dictionary<string, string> LoadConfig(string path)

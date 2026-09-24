@@ -311,12 +311,14 @@ sudo proftpd --configtest && sudo systemctl reload proftpd
 liste celles dont le manifeste a changé :
 
 ```bash
-sudo swgl-sync update --notify "New map: Kashyyyk" --notify-ping Testers
+sudo swgl-sync update --notify "**Big update**
+New map: Kashyyyk" --notify-ping Testers
 sudo swgl-sync update --branch elween --label "Ep3 test 5" --notify
 ```
 
 ```
-@Testers New map: Kashyyyk
+Big update            (en gras)
+New map: Kashyyyk
 
 New branch: elween — Ep3 test 5
 • 214 files added (15.2 GB to download)
@@ -324,8 +326,17 @@ New branch: elween — Ep3 test 5
 Branch updated: public — Release 3
 • 3 files added, 1 updated, 1 removed (812 MB to download)
 
+@Testers
+
 📎 changes.txt
 ```
+
+Le message part tel quel, en tête : Discord en interprète le Markdown (`**gras**`, `*italique*`,
+`~~barré~~`, `- listes`, `[lien](https://…)`, `||spoiler||`). `
+` y devient un retour à la ligne,
+seul moyen d'en mettre depuis l'invite `swgl-sync>`, qui ne lit qu'une ligne. Les mentions de
+`--notify-ping` viennent à la fin, et ne sont jamais coupées si le message dépasse la limite de
+Discord (2000 caractères) : c'est le résumé qui est raccourci, le détail restant dans le fichier.
 
 - Une branche est « changée » si ses fichiers (ajoutés, modifiés, retirés) ou sa liste de
   suppressions forcées ont bougé ; un simple changement de libellé ne compte pas. Une branche
@@ -334,7 +345,7 @@ Branch updated: public — Release 3
 - Sans changement, rien n'est envoyé. Sans message, seul le résumé part.
 - Le détail fichier par fichier est dans `changes.txt`, joint au message : Discord en montre un
   aperçu dépliable.
-- `--notify-ping <rôle>` mentionne un rôle en tête du message : un nom du fichier des rôles
+- `--notify-ping <rôle>` mentionne un rôle à la fin du message : un nom du fichier des rôles
   (ci-dessous) ou directement l'identifiant du rôle, ce qui permet d'en mentionner n'importe
   lequel sans le déclarer. L'option se répète pour plusieurs rôles. Un nom
   inconnu est refusé avant toute régénération.
