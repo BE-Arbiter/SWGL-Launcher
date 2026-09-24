@@ -311,8 +311,7 @@ sudo proftpd --configtest && sudo systemctl reload proftpd
 liste celles dont le manifeste a changé :
 
 ```bash
-sudo swgl-sync update --notify "**Big update**
-New map: Kashyyyk" --notify-ping Testers
+sudo swgl-sync update --notify "**Big update**\nNew map: Kashyyyk" --notify-ping Testers
 sudo swgl-sync update --branch elween --label "Ep3 test 5" --notify
 ```
 
@@ -332,8 +331,7 @@ Branch updated: public — Release 3
 ```
 
 Le message part tel quel, en tête : Discord en interprète le Markdown (`**gras**`, `*italique*`,
-`~~barré~~`, `- listes`, `[lien](https://…)`, `||spoiler||`). `
-` y devient un retour à la ligne,
+`~~barré~~`, `- listes`, `[lien](https://…)`, `||spoiler||`). `\n` y devient un retour à la ligne,
 seul moyen d'en mettre depuis l'invite `swgl-sync>`, qui ne lit qu'une ligne. Les mentions de
 `--notify-ping` viennent à la fin, et ne sont jamais coupées si le message dépasse la limite de
 Discord (2000 caractères) : c'est le résumé qui est raccourci, le détail restant dans le fichier.
