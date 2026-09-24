@@ -2,21 +2,26 @@
 # ==============================================================================
 # swgl-sync — manages the branches of the SWGL FTP repository: public and betas.
 #
-#   swgl-sync update                    regenerate public, then every beta
-#   swgl-sync update <branch> [label]   regenerate one branch: "public" or a code
-#   swgl-sync rename <branch> <label>   change the label players see
-#   swgl-sync create <code>             create a beta
-#   swgl-sync remove <code>             close a beta (its files are kept)
-#   swgl-sync exclude <code> [path]     drop base files from this beta
-#   swgl-sync restore <code> <path>     undo an exclusion
-#   swgl-sync force-delete <branch> [path]   delete files from players' installs
-#   swgl-sync cancel-delete <branch> <path>  undo a forced deletion
+#   swgl-sync update [--branch <b>] [--label "<l>"] [--notify ["<message>"]]
+#   swgl-sync rename --branch <b> --label "<l>"
+#   swgl-sync create --branch <code>
+#   swgl-sync remove --branch <code>
+#   swgl-sync exclude --branch <code> [path...]
+#   swgl-sync restore --branch <code> <path...>
+#   swgl-sync force-delete --branch <b> [path...]
+#   swgl-sync cancel-delete --branch <b> <path...>
 #
-# Beta <code> gets the account "swgl-<code>", password "<code>", which sees
-# /base, /beta-<code>, /beta-<code>.diff and its own /manifest.json.
+# A branch is "public" or a beta code. Beta <code> gets the account
+# "swgl-<code>", password "<code>", which sees /base, /beta-<code>,
+# /beta-<code>.diff and its own /manifest.json.
 #
 # Patch notes: patchnotes-public.md and patchnotes-<code>.md at the root of the
 # repository, seen by each account as /patchnotes.md. Empty means no notes.
+#
+# --notify posts one Discord message for the manifests that changed, through the
+# webhook set in /etc/swgl-sync.conf (root only):
+#   webhook=https://discord.com/api/webhooks/...
+#   role.Testers=123456789012345678       @Testers in a message pings this role
 # ==============================================================================
 set -euo pipefail
 
@@ -25,6 +30,7 @@ JAILS=/srv/swgl-jails
 GROUP=swgl
 OWNER=swgl-dev
 BETAS_CONF=/etc/proftpd/conf.d/swgl-betas.conf
+CONFIG=/etc/swgl-sync.conf
 MANIFEST_TOOL=${MANIFEST_TOOL:-SWGLManifest}
 
 # Account prefix: must match the launcher's ftp.beta.user.prefix.
@@ -41,29 +47,94 @@ die() {
 usage() {
     cat >&2 <<EOF
 usage:
-  swgl-sync update                    public, then every beta
-  swgl-sync update <branch> [label]   one branch: "$PUBLIC" or a beta code;
-                                      without a label, the current one is kept
-  swgl-sync rename <branch> <label>   change the label players see, nothing
-                                      is recalculated
-  swgl-sync create <code>             create a beta
-  swgl-sync remove <code>             close a beta (its files are kept)
-  swgl-sync exclude <code> [path]     drop base files from this beta;
-                                      without a path, show the list
-  swgl-sync restore <code> <path>     undo an exclusion
-  swgl-sync force-delete <branch> [path]
-                                      delete files from players' installs, even
-                                      outside the launcher's own patterns;
-                                      without a path, show the list
-  swgl-sync cancel-delete <branch> <path>
-                                      undo a forced deletion
+  swgl-sync update [--branch <b>] [--label "<l>"] [--notify ["<message>"]]
+        regenerate one branch, or public then every beta without --branch;
+        without --label the current label is kept; --notify posts one Discord
+        message for the branches that changed, the message first if given
+  swgl-sync rename --branch <b> --label "<l>"
+        change the label players see, nothing is recalculated
+  swgl-sync create --branch <code>          create a beta
+  swgl-sync remove --branch <code>          close a beta (its files are kept)
+  swgl-sync exclude --branch <code> [path...]
+        drop base files from this beta; without a path, show the list
+  swgl-sync restore --branch <code> <path...>
+        undo an exclusion
+  swgl-sync force-delete --branch <b> [path...]
+        delete files from players' installs, even outside the launcher's own
+        patterns; without a path, show the list
+  swgl-sync cancel-delete --branch <b> <path...>
+        undo a forced deletion
 
+A branch is "$PUBLIC" or a beta code. Quote values with spaces: --label "Ep3 test 5".
 Paths are relative to GameData ("SWGL/SWGL_Menu.pk3"). "*" stays within a
-folder, "**" crosses folders. In a shell, quote patterns so the shell leaves
-them alone. Labels may contain spaces and need no quotes.
+folder, "**" crosses folders; quote patterns so the shell leaves them alone.
 EOF
     exit 1
 }
+
+# ------------------------------------------------------------------------------
+# Options: --branch, --label, --notify [message], then positional paths
+# ------------------------------------------------------------------------------
+
+BRANCH=""
+LABEL=""
+NOTIFY=0
+MESSAGE=""
+HAS_LABEL=0
+HAS_MESSAGE=0
+PATHS=()
+
+parse_options() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --branch)
+                [[ $# -ge 2 ]] || die "--branch needs a value"
+                BRANCH=$2
+                shift 2
+                ;;
+            --label)
+                [[ $# -ge 2 && -n "$2" ]] || die "--label needs a value"
+                LABEL=$2
+                HAS_LABEL=1
+                shift 2
+                ;;
+            --notify)
+                NOTIFY=1
+                shift
+                # The message is optional: the next word, unless it is an option.
+                if [[ $# -gt 0 && "$1" != --* ]]; then
+                    MESSAGE=$1
+                    HAS_MESSAGE=1
+                    shift
+                fi
+                ;;
+            --*)
+                die "unknown option: $1"
+                ;;
+            *)
+                PATHS+=("$1")
+                shift
+                ;;
+        esac
+    done
+}
+
+# Refuses the options a command does not take: allow_only <option...>
+allow_only() {
+    local allowed=" $* "
+    [[ -z "$BRANCH" || "$allowed" == *" branch "* ]] || die "--branch is not used by this command"
+    [[ $HAS_LABEL -eq 0 || "$allowed" == *" label "* ]] || die "--label is not used by this command"
+    [[ $NOTIFY -eq 0 || "$allowed" == *" notify "* ]] || die "--notify is not used by this command"
+    [[ ${#PATHS[@]} -eq 0 || "$allowed" == *" paths "* ]] || die "unexpected argument: ${PATHS[0]}"
+}
+
+need_branch() {
+    [[ -n "$BRANCH" ]] || die "--branch is required"
+}
+
+# ------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------
 
 check_code() {
     [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid code: $1"
@@ -140,6 +211,11 @@ require_beta() {
     [[ -d "$ROOT/$DIR_PREFIX$1" ]] || die "unknown beta: $1 ($ROOT/$DIR_PREFIX$1 missing)"
 }
 
+# A branch: "public" or an existing beta.
+require_branch() {
+    [[ "$1" == "$PUBLIC" ]] || require_beta "$1"
+}
+
 # Path relative to GameData, "/" separators, no leading "/" and no "..".
 normalize_path() {
     # Quotes are never part of a path: typed at the swgl-sync> prompt, they would
@@ -154,10 +230,6 @@ normalize_path() {
     echo "$path"
 }
 
-# ------------------------------------------------------------------------------
-# update
-# ------------------------------------------------------------------------------
-
 # Manifest of a branch: "public" or a beta code.
 manifest_file() {
     if [[ "$1" == "$PUBLIC" ]]; then
@@ -167,13 +239,27 @@ manifest_file() {
     fi
 }
 
-update_public() {
-    local label=${1:-}
-    ensure_patchnotes "$PUBLIC"
+# ------------------------------------------------------------------------------
+# update / rename
+# ------------------------------------------------------------------------------
+
+# Where the manifest tool writes what changed per branch, when --notify is set.
+CHANGES_DIR=""
+
+# Manifest tool options shared by every branch: label and change report.
+common_args() {
+    local branch=$1
+    COMMON=()
 
     # Without a label, the tool keeps the one already published.
-    local versions=()
-    [[ -n "$label" ]] && versions=(--version "$label")
+    [[ $HAS_LABEL -eq 1 ]] && COMMON+=(--version "$LABEL")
+    [[ -n "$CHANGES_DIR" ]] && COMMON+=(--changes "$CHANGES_DIR/$branch.json")
+    return 0
+}
+
+update_public() {
+    ensure_patchnotes "$PUBLIC"
+    common_args "$PUBLIC"
 
     # Files players must delete, even outside the launcher's own patterns.
     local deletions=()
@@ -184,7 +270,7 @@ update_public() {
     echo "== $PUBLIC"
     "$MANIFEST_TOOL" --source "$ROOT/base" --source-prefix /base \
                      "${deletions[@]}" \
-                     "${versions[@]}" \
+                     "${COMMON[@]}" \
                      --channel "$PUBLIC" \
                      --output "$(manifest_file "$PUBLIC")"
     chown "$OWNER:$GROUP" "$(manifest_file "$PUBLIC")"
@@ -192,16 +278,12 @@ update_public() {
 
 update_beta() {
     local code=$1
-    local label=${2:-}
     local home="$ROOT/$DIR_PREFIX$code"
 
     [[ -d "$home" ]] || die "unknown beta: $code ($home missing)"
     ensure_patchnotes "$code"
     ensure_patchnotes_alias "$code"
-
-    # Without a label, the tool keeps the one already published.
-    local versions=()
-    [[ -n "$label" ]] && versions=(--version "$label")
+    common_args "$code"
 
     # Base files come from the public manifest, already hashed: only the beta's
     # own files are read. Without a public manifest yet, base is scanned.
@@ -225,32 +307,37 @@ update_beta() {
                      "${base[@]}" \
                      "${removals[@]}" \
                      "${deletions[@]}" \
-                     "${versions[@]}" \
+                     "${COMMON[@]}" \
                      --channel "$DIR_PREFIX$code" \
                      --output "$(manifest_file "$code")"
     chown "$OWNER:$GROUP" "$(manifest_file "$code")"
 }
 
 cmd_update() {
-    if [[ $# -eq 0 ]]; then
+    allow_only branch label notify
+
+    # One label for every branch is never what was meant.
+    [[ $HAS_LABEL -eq 0 || -n "$BRANCH" ]] || die "--label needs --branch"
+    [[ -z "$BRANCH" ]] || require_branch "$BRANCH"
+
+    if [[ $NOTIFY -eq 1 ]]; then
+        # Checked first: better to refuse now than after a long update.
+        grep -Eq '^[[:space:]]*webhook[[:space:]]*=[[:space:]]*[^[:space:]]' "$CONFIG" 2>/dev/null \
+            || die "--notify needs webhook=... in $CONFIG"
+
+        CHANGES_DIR=$(mktemp -d)
+        trap 'rm -rf "$CHANGES_DIR"' EXIT
+    fi
+
+    if [[ -z "$BRANCH" ]]; then
         update_public
 
         local code
         while read -r code; do
             update_beta "$code"
         done < <(list_betas)
-
-        return
-    fi
-
-    local branch=$1
-    shift
-
-    # The rest is the label: words are joined, so it needs no quotes.
-    local label="$*"
-
-    if [[ "$branch" == "$PUBLIC" ]]; then
-        update_public "$label"
+    elif [[ "$BRANCH" == "$PUBLIC" ]]; then
+        update_public
 
         # Every beta manifest carries the public files with their checksums: if
         # base changed, they are out of date.
@@ -258,36 +345,42 @@ cmd_update() {
             echo "note: betas take their base files from the public manifest; if base changed, 'swgl-sync update' refreshes them too." >&2
         fi
     else
-        check_code "$branch"
-        update_beta "$branch" "$label"
+        update_beta "$BRANCH"
+    fi
+
+    if [[ $NOTIFY -eq 1 ]]; then
+        local message=()
+        [[ $HAS_MESSAGE -eq 1 ]] && message=(--message "$MESSAGE")
+
+        echo "== Discord"
+        "$MANIFEST_TOOL" --notify "$CHANGES_DIR" "${message[@]}" --config "$CONFIG"
     fi
 }
 
 # Changes the label players see, without regenerating the manifest.
 cmd_rename() {
-    [[ $# -ge 2 ]] || usage
-
-    local branch=$1
-    shift
-    require_branch "$branch"
+    allow_only branch label
+    need_branch
+    [[ $HAS_LABEL -eq 1 ]] || die "--label is required"
+    require_branch "$BRANCH"
 
     local manifest
-    manifest=$(manifest_file "$branch")
-    [[ -f "$manifest" ]] || die "no manifest yet for $branch: run 'swgl-sync update $branch' first"
+    manifest=$(manifest_file "$BRANCH")
+    [[ -f "$manifest" ]] || die "no manifest yet for $BRANCH: run 'swgl-sync update --branch $BRANCH' first"
 
-    # The rest is the label: words are joined, so it needs no quotes.
-    "$MANIFEST_TOOL" --relabel --output "$manifest" --version "$*"
+    "$MANIFEST_TOOL" --relabel --output "$manifest" --version "$LABEL"
     chown "$OWNER:$GROUP" "$manifest"
 }
 
 # ------------------------------------------------------------------------------
-# create
+# create / remove
 # ------------------------------------------------------------------------------
 
 cmd_create() {
-    [[ $# -eq 1 ]] || usage
+    allow_only branch
+    need_branch
 
-    local code=$1
+    local code=$BRANCH
     check_code "$code"
 
     local user="$USER_PREFIX$code"
@@ -333,17 +426,14 @@ EOF
     echo "  password : $code"
     echo "  files    : $home"
     echo "  notes    : $(patchnotes_file "$code") (Markdown, empty = none)"
-    echo "  next     : upload the files, then 'swgl-sync update $code'"
+    echo "  next     : upload the files, then 'swgl-sync update --branch $code'"
 }
 
-# ------------------------------------------------------------------------------
-# remove
-# ------------------------------------------------------------------------------
-
 cmd_remove() {
-    [[ $# -eq 1 ]] || usage
+    allow_only branch
+    need_branch
 
-    local code=$1
+    local code=$BRANCH
     check_code "$code"
 
     local user="$USER_PREFIX$code"
@@ -430,99 +520,92 @@ list_drop() {
 }
 
 cmd_exclude() {
-    [[ $# -ge 1 ]] || usage
-
-    local code=$1
-    shift
-    require_beta "$code"
+    allow_only branch paths
+    need_branch
+    require_beta "$BRANCH"
 
     local list
-    list=$(remove_list "$code")
+    list=$(remove_list "$BRANCH")
 
-    if [[ $# -eq 0 ]]; then
-        list_show "$list" "base files excluded from beta $code:" "no base file excluded from beta $code"
+    if [[ ${#PATHS[@]} -eq 0 ]]; then
+        list_show "$list" "base files excluded from beta $BRANCH:" "no base file excluded from beta $BRANCH"
         return
     fi
 
     # An exact path missing from base is almost always a typo.
     local path
-    for path in "$@"; do
+    for path in "${PATHS[@]}"; do
         path=$(normalize_path "$path")
         if [[ "$path" != *[*?]* && ! -e "$ROOT/base/$path" ]]; then
             echo "  warning: $path does not exist in base" >&2
         fi
     done
 
-    list_add "$list" "$@"
-    echo "next: swgl-sync update $code"
+    list_add "$list" "${PATHS[@]}"
+    echo "next: swgl-sync update --branch $BRANCH"
 }
 
 cmd_restore() {
-    [[ $# -ge 2 ]] || usage
-
-    local code=$1
-    shift
-    require_beta "$code"
+    allow_only branch paths
+    need_branch
+    require_beta "$BRANCH"
+    [[ ${#PATHS[@]} -gt 0 ]] || die "no path given"
 
     local list
-    list=$(remove_list "$code")
-    [[ -s "$list" ]] || die "no base file excluded from beta $code"
+    list=$(remove_list "$BRANCH")
+    [[ -s "$list" ]] || die "no base file excluded from beta $BRANCH"
 
-    list_drop "$list" "$@"
-    echo "next: swgl-sync update $code"
-}
-
-# Branch argument of force-delete / cancel-delete: "public" or an existing beta.
-require_branch() {
-    [[ "$1" == "$PUBLIC" ]] || require_beta "$1"
+    list_drop "$list" "${PATHS[@]}"
+    echo "next: swgl-sync update --branch $BRANCH"
 }
 
 cmd_force_delete() {
-    [[ $# -ge 1 ]] || usage
-
-    local branch=$1
-    shift
-    require_branch "$branch"
+    allow_only branch paths
+    need_branch
+    require_branch "$BRANCH"
 
     local list
-    list=$(delete_list "$branch")
+    list=$(delete_list "$BRANCH")
 
-    if [[ $# -eq 0 ]]; then
-        list_show "$list" "files deleted from players' installs on $branch:" "no forced deletion on $branch"
+    if [[ ${#PATHS[@]} -eq 0 ]]; then
+        list_show "$list" "files deleted from players' installs on $BRANCH:" "no forced deletion on $BRANCH"
         return
     fi
 
-    list_add "$list" "$@"
-    echo "next: swgl-sync update $branch"
+    list_add "$list" "${PATHS[@]}"
+    echo "next: swgl-sync update --branch $BRANCH"
 }
 
 cmd_cancel_delete() {
-    [[ $# -ge 2 ]] || usage
-
-    local branch=$1
-    shift
-    require_branch "$branch"
+    allow_only branch paths
+    need_branch
+    require_branch "$BRANCH"
+    [[ ${#PATHS[@]} -gt 0 ]] || die "no path given"
 
     local list
-    list=$(delete_list "$branch")
-    [[ -s "$list" ]] || die "no forced deletion on $branch"
+    list=$(delete_list "$BRANCH")
+    [[ -s "$list" ]] || die "no forced deletion on $BRANCH"
 
-    list_drop "$list" "$@"
-    echo "next: swgl-sync update $branch"
+    list_drop "$list" "${PATHS[@]}"
+    echo "next: swgl-sync update --branch $BRANCH"
 }
 
 # ------------------------------------------------------------------------------
 
 [[ $EUID -eq 0 ]] || die "must be run as root (sudo)"
 
-case "${1:-}" in
-    update)        shift; cmd_update "$@" ;;
-    create)        shift; cmd_create "$@" ;;
-    remove)        shift; cmd_remove "$@" ;;
-    exclude)       shift; cmd_exclude "$@" ;;
-    restore)       shift; cmd_restore "$@" ;;
-    rename)        shift; cmd_rename "$@" ;;
-    force-delete)  shift; cmd_force_delete "$@" ;;
-    cancel-delete) shift; cmd_cancel_delete "$@" ;;
+COMMAND=${1:-}
+[[ $# -gt 0 ]] && shift
+parse_options "$@"
+
+case "$COMMAND" in
+    update)        cmd_update ;;
+    rename)        cmd_rename ;;
+    create)        cmd_create ;;
+    remove)        cmd_remove ;;
+    exclude)       cmd_exclude ;;
+    restore)       cmd_restore ;;
+    force-delete)  cmd_force_delete ;;
+    cancel-delete) cmd_cancel_delete ;;
     *)             usage ;;
 esac

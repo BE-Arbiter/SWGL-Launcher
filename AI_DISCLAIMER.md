@@ -70,14 +70,16 @@ Claims below were checked by running code, not by inspection alone.
 - **SSH access for `swgl-dev`** (`swgl-sync-ssh`, sudoers, sshd block): applied on the server,
   the `swgl-sync>` prompt works and no shell is reachable. The prompt was since rewritten in
   Python for history and completion: word splitting, completion candidates and the command
-  loop were checked locally (`$(...)`, `;` and `*` reach `swgl-sync` as plain text), but the
+  loop were checked locally (`$(...)`, `;` and `*` reach `swgl-sync` as plain text; completion of options and their values), but the
   line editing itself (arrow keys, Tab) only runs on the server and was not tried there yet.
 
 ## What was not verified
 
-- **`server/swgl-sync`**: `update`, `rename`, `exclude`, `restore`, `force-delete` and `cancel-delete` were tested against the real manifest tool on a fake repository (labels kept or changed, beta built from the public manifest with exclusions and inherited deletions, quotes stripped from paths, checksums reused for unchanged files and recomputed for modified or new ones), and the `swgl-sync>` word splitting on sample lines; `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
+- **`server/swgl-sync`**: `update`, `rename`, `exclude`, `restore`, `force-delete` and `cancel-delete`, with the named options, were tested against the real manifest tool on a fake repository (option errors, `--notify` against a stand-in Discord webhook: one message listing the changed branches, declared roles only turned into mentions, `changes.txt` attached, nothing sent without changes; labels kept or changed, beta built from the public manifest with exclusions and inherited deletions, quotes stripped from paths, checksums reused for unchanged files and recomputed for modified or new ones), and the `swgl-sync>` word splitting on sample lines; `create` and `remove` need `useradd` and ProFTPD and have not been run on the target machine.
 - **Patch notes on the real server**: the `VRootAlias` to `/patchnotes.md` and its backfill in
   `swgl-sync update` were checked on a copy of the configuration, not against ProFTPD.
+- **Discord announcements against the real Discord API**: the request was checked against a
+  local stand-in only; the webhook, role mentions and attachment preview are untested on Discord.
 - **Steam library rendering.** Artwork file names and the `shortcuts.vdf` format were verified,
   but no shortcut was ever written to a live Steam profile.
 - **Interface rendering on other DPI settings.** The window was checked at 100 % only.

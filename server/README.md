@@ -157,24 +157,25 @@ pour le compiler en `linux-x64`).
 
 | Commande | Effet |
 | --- | --- |
-| `swgl-sync update` | Régénère le manifeste du public, puis celui de chaque beta. |
-| `swgl-sync update <branche> [libellé]` | Régénère une seule branche : `public` ou un code de beta. |
-| `swgl-sync rename <branche> <libellé>` | Change le libellé affiché aux joueurs, sans rien recalculer. |
-| `swgl-sync create <code>` | Crée une beta. |
-| `swgl-sync remove <code>` | Ferme une beta ; ses fichiers restent sur le disque. |
-| `swgl-sync exclude <code> [chemin...]` | Retire des fichiers de `base` pour cette beta ; sans chemin, affiche la liste. |
-| `swgl-sync restore <code> <chemin...>` | Annule un retrait. |
-| `swgl-sync force-delete <branche> [chemin...]` | Fait supprimer des fichiers chez les joueurs, hors des motifs du launcher ; sans chemin, affiche la liste. |
-| `swgl-sync cancel-delete <branche> <chemin...>` | Annule une suppression forcée. |
+| `swgl-sync update [--notify ["<message>"]]` | Régénère le manifeste du public, puis celui de chaque beta. |
+| `swgl-sync update --branch <branche> [--label "<libellé>"] [--notify ["<message>"]]` | Régénère une seule branche : `public` ou un code de beta. |
+| `swgl-sync rename --branch <branche> --label "<libellé>"` | Change le libellé affiché aux joueurs, sans rien recalculer. |
+| `swgl-sync create --branch <code>` | Crée une beta. |
+| `swgl-sync remove --branch <code>` | Ferme une beta ; ses fichiers restent sur le disque. |
+| `swgl-sync exclude --branch <code> [chemin...]` | Retire des fichiers de `base` pour cette beta ; sans chemin, affiche la liste. |
+| `swgl-sync restore --branch <code> <chemin...>` | Annule un retrait. |
+| `swgl-sync force-delete --branch <branche> [chemin...]` | Fait supprimer des fichiers chez les joueurs, hors des motifs du launcher ; sans chemin, affiche la liste. |
+| `swgl-sync cancel-delete --branch <branche> <chemin...>` | Annule une suppression forcée. |
 
 Le libellé est la version affichée aux joueurs. Sans libellé, `update` garde celui déjà publié ;
-une branche qui n'en a encore aucun reçoit la date du jour (`2026.09.22.2143`). Un libellé peut
-contenir des espaces, sans guillemets : `swgl-sync rename elween Ep3 test 4`.
+une branche qui n'en a encore aucun reçoit la date du jour (`2026.09.22.2143`). Une valeur qui
+contient des espaces se met entre guillemets : `swgl-sync rename --branch elween --label "Ep3 test 4"`.
+Les options peuvent venir dans n'importe quel ordre ; les chemins se placent après.
 
 ### Créer une beta
 
 ```bash
-sudo swgl-sync create elween
+sudo swgl-sync create --branch elween
 ```
 
 Crée `/srv/swgl/beta-elween/`, le fichier `beta-elween.diff`, la prison
@@ -184,7 +185,7 @@ bloc à `swgl-betas.conf` et recharge ProFTPD après un `--configtest`. Il reste
 puis :
 
 ```bash
-sudo swgl-sync update elween "Ep3 test 1"
+sudo swgl-sync update --branch elween --label "Ep3 test 1"
 ```
 
 Le testeur voit alors :
@@ -204,10 +205,10 @@ Une beta peut ajouter ou remplacer des fichiers en les déposant dans son dossie
 **retirer** un que `base` fournit, on le marque :
 
 ```bash
-sudo swgl-sync exclude elween SWGL/SWGL_Missions_Ep8.pk3 "SWGL/SWGL_Old_*.pk3"
-sudo swgl-sync exclude elween          # affiche la liste
-sudo swgl-sync restore elween SWGL/SWGL_Missions_Ep8.pk3
-sudo swgl-sync update  elween          # applique
+sudo swgl-sync exclude --branch elween SWGL/SWGL_Missions_Ep8.pk3 "SWGL/SWGL_Old_*.pk3"
+sudo swgl-sync exclude --branch elween          # affiche la liste
+sudo swgl-sync restore --branch elween SWGL/SWGL_Missions_Ep8.pk3
+sudo swgl-sync update  --branch elween          # applique
 ```
 
 Les chemins sont relatifs au GameData. `*` reste dans un dossier, `**` le traverse ; dans un
@@ -236,10 +237,10 @@ chose, par exemple une map ou une config qu'une ancienne version installée à l
 on le marque sur la branche concernée, `public` ou un code de beta :
 
 ```bash
-sudo swgl-sync force-delete public "SWGL/maps/old_*.bsp" SWGL/readme.txt
-sudo swgl-sync force-delete public           # affiche la liste
-sudo swgl-sync cancel-delete public SWGL/readme.txt
-sudo swgl-sync update public                 # applique
+sudo swgl-sync force-delete --branch public "SWGL/maps/old_*.bsp" SWGL/readme.txt
+sudo swgl-sync force-delete --branch public     # affiche la liste
+sudo swgl-sync cancel-delete --branch public SWGL/readme.txt
+sudo swgl-sync update --branch public           # applique
 ```
 
 La liste est stockée dans `/srv/swgl/forcedelete-<branche>.list`. `update` l'inscrit dans le
@@ -285,7 +286,7 @@ notes, on vide le fichier. Il ne faut pas le supprimer : l'alias FTP pointe dess
 
 `swgl-sync` crée ces fichiers vides : `create` pour une nouvelle beta, `update` pour le public
 et pour chaque beta. Une beta créée avant l'ajout des notes reçoit son alias au prochain
-`swgl-sync update <code>`.
+`swgl-sync update --branch <code>`.
 
 Le HTML brut est ignoré à l'affichage, et les liens s'ouvrent dans le navigateur du joueur.
 
@@ -302,6 +303,57 @@ puis :
 sudo install -o swgl-dev -g swgl -m 644 /dev/null /srv/swgl/patchnotes-public.md
 sudo proftpd --configtest && sudo systemctl reload proftpd
 ```
+
+### Annonces Discord
+
+`update --notify` publie, une fois toutes les branches traitées, **un** message Discord qui
+liste celles dont le manifeste a changé :
+
+```bash
+sudo swgl-sync update --notify "@Testers New map: Kashyyyk"
+sudo swgl-sync update --branch elween --label "Ep3 test 5" --notify
+```
+
+```
+@Testers New map: Kashyyyk
+
+New branch: elween — Ep3 test 5
+• 214 files added (15.2 GB to download)
+
+Branch updated: public — Release 3
+• 3 files added, 1 updated, 1 removed (812 MB to download)
+
+📎 changes.txt
+```
+
+- Une branche est « changée » si ses fichiers (ajoutés, modifiés, retirés) ou sa liste de
+  suppressions forcées ont bougé ; un simple changement de libellé ne compte pas. Une branche
+  sans manifeste précédent apparaît en *New branch*.
+- Quand `base` change, les betas changent aussi, puisqu'elles l'embarquent : elles apparaissent.
+- Sans changement, rien n'est envoyé. Sans message, seul le résumé part.
+- Le détail fichier par fichier est dans `changes.txt`, joint au message : Discord en montre un
+  aperçu dépliable.
+- `@Nom` devient une vraie mention seulement si le rôle est déclaré dans la configuration ;
+  aucune autre mention n'est jamais envoyée (pas de `@everyone` par accident).
+
+La configuration tient dans `/etc/swgl-sync.conf`, lisible par root seul — l'URL du webhook
+permet à quiconque la connaît de publier dans le salon :
+
+```bash
+sudo tee /etc/swgl-sync.conf >/dev/null <<'EOF'
+webhook=https://discord.com/api/webhooks/<id>/<jeton>
+role.Testers=123456789012345678
+EOF
+sudo chmod 600 /etc/swgl-sync.conf
+```
+
+Le webhook se crée dans Discord : *Paramètres du salon → Intégrations → Webhooks*. L'identifiant
+d'un rôle se copie par clic droit sur le rôle, une fois le *mode développeur* activé
+(*Paramètres → Avancés*). Si la mention ne sonne pas, cocher *Autoriser tout le monde à
+@mentionner ce rôle* dans les réglages du rôle.
+
+`--notify` vérifie la présence du webhook avant de commencer : sans lui, rien n'est régénéré.
+Si Discord refuse le message, les manifestes restent à jour ; seule l'annonce manque.
 
 ### `swgl-sync` pour `swgl-dev`, en SSH
 
@@ -325,12 +377,12 @@ Une session SSH ouverte sans commande donne l'invite `swgl-sync>` ; avec une com
 l'exécute et se ferme :
 
 ```bash
-ssh swgl-dev@vps-c2b14a7e.vps.ovh.net update elween
+ssh swgl-dev@vps-c2b14a7e.vps.ovh.net update --branch elween
 ```
 
 À l'invite, les flèches ↑/↓ parcourent l'historique de la session, ←/→ et Début/Fin
-éditent la ligne, Ctrl+R cherche dans l'historique, et Tab complète les commandes, les
-branches et les chemins (fichiers de `base` et de la beta, entrées des listes pour `restore`
+éditent la ligne, Ctrl+R cherche dans l'historique, et Tab complète les commandes, leurs
+options (`--branch`, `--label`, `--notify`), les branches et les chemins (fichiers de `base` et de la beta, entrées des listes pour `restore`
 et `cancel-delete`). Le `swgl-sync` devant la commande est facultatif. Une ligne n'est jamais
 interprétée par un shell, seulement découpée en mots, les guillemets groupant des mots
 (`"Ep3 test 4"`) : `$(...)`, `;` ou `*` restent du texte. Ctrl+C interrompt la commande en

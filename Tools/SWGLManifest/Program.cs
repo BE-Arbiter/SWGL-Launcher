@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using SWGLLauncher;
 
 namespace SWGLLauncher.ManifestTool
@@ -38,6 +39,11 @@ namespace SWGLLauncher.ManifestTool
             if (options.Relabel)
             {
                 return Relabel(options, previous);
+            }
+
+            if (options.NotifyDirectory is not null)
+            {
+                return Notifier.Publish(options.NotifyDirectory, options.Message, options.ConfigPath);
             }
 
             var manifest = new Manifest
@@ -108,6 +114,12 @@ namespace SWGLLauncher.ManifestTool
             }
 
             File.WriteAllText(options.Output, ManifestService.Serialize(manifest));
+
+            // Ce qui a change depuis le manifeste precedent, pour l'annonce Discord.
+            if (options.ChangesFile is not null)
+            {
+                File.WriteAllText(options.ChangesFile, JsonSerializer.Serialize(BranchChanges.Compare(previous, manifest)));
+            }
 
             long total = manifest.Files.Sum(file => file.Size);
             Console.WriteLine();
@@ -374,6 +386,10 @@ namespace SWGLLauncher.ManifestTool
             public string? Version { get; private set; }
             public string? BaseManifest { get; private set; }
             public bool Rehash { get; private set; }
+            public string? ChangesFile { get; private set; }
+            public string? NotifyDirectory { get; private set; }
+            public string? Message { get; private set; }
+            public string ConfigPath { get; private set; } = "/etc/swgl-sync.conf";
             public bool Relabel { get; private set; }
             public string Notes { get; private set; } = string.Empty;
             public string Output { get; private set; } = string.Empty;
@@ -412,6 +428,10 @@ namespace SWGLLauncher.ManifestTool
                         case "--base-manifest": options.BaseManifest = Next(); break;
                         case "--relabel": options.Relabel = true; break;
                         case "--rehash": options.Rehash = true; break;
+                        case "--changes": options.ChangesFile = Next(); break;
+                        case "--notify": options.NotifyDirectory = Next(); break;
+                        case "--message": options.Message = Next(); break;
+                        case "--config": options.ConfigPath = Next(); break;
                         case "--channel": options.Channel = Next(); break;
                         case "--version": options.Version = Next(); break;
                         case "--notes": options.Notes = Next(); break;
@@ -421,6 +441,11 @@ namespace SWGLLauncher.ManifestTool
                         case "--delete-list": options.DeleteList = Next(); break;
                         default: throw new ArgumentException($"Argument inconnu : {key}");
                     }
+                }
+
+                if (options.NotifyDirectory is not null)
+                {
+                    return options;
                 }
 
                 if (options.Relabel)
@@ -471,6 +496,13 @@ namespace SWGLLauncher.ManifestTool
                                                  recalculer (avec --version)
                       --rehash                   Relit et hache tous les fichiers, sans reprendre les
                                                  empreintes du manifeste existant
+                      --changes <fichier>        Ecrit ce qui a change depuis le manifeste existant (JSON)
+
+                    Annonce Discord des branches modifiees (au lieu de generer) :
+                      --notify <dossier>         Dossier des fichiers --changes, un "<branche>.json" par branche
+                      --message <texte>          Texte place en tete ; @Role devient une mention si le role
+                                                 est declare dans la configuration
+                      --config <fichier>         webhook=... et role.<Nom>=<id> (defaut : /etc/swgl-sync.conf)
 
                     Exemples :
                       SWGLManifest --source C:\ftp\public --channel public

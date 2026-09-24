@@ -25,19 +25,22 @@ ROOT = "/srv/swgl"
 PUBLIC = "public"
 DIR_PREFIX = "beta-"
 
-# Command -> what its first argument is: a branch, a beta, or nothing.
+# Command -> its options, and what --branch takes: any branch, a beta, or a new code.
 COMMANDS = {
-    "update": "branch",
-    "rename": "branch",
-    "create": None,
-    "remove": "beta",
-    "exclude": "beta",
-    "restore": "beta",
-    "force-delete": "branch",
-    "cancel-delete": "branch",
-    "help": None,
-    "exit": None,
+    "update": (["--branch", "--label", "--notify"], "branch"),
+    "rename": (["--branch", "--label"], "branch"),
+    "create": (["--branch"], None),
+    "remove": (["--branch"], "beta"),
+    "exclude": (["--branch"], "beta"),
+    "restore": (["--branch"], "beta"),
+    "force-delete": (["--branch"], "branch"),
+    "cancel-delete": (["--branch"], "branch"),
+    "help": ([], None),
+    "exit": ([], None),
 }
+
+# Commands whose remaining words are paths.
+PATH_COMMANDS = ("exclude", "restore", "force-delete", "cancel-delete")
 
 
 def split_words(line):
@@ -112,41 +115,60 @@ def paths_under(folder, prefix):
     return matches
 
 
+def path_candidates(command, branch, current):
+    """Paths for the list commands, once the branch is known."""
+    if command == "exclude":
+        return paths_under(os.path.join(ROOT, "base"), current)
+
+    if command == "force-delete":
+        options = paths_under(os.path.join(ROOT, "base"), current)
+        if branch != PUBLIC:
+            options += paths_under(os.path.join(ROOT, f"{DIR_PREFIX}{branch}"), current)
+        return sorted(set(options))
+
+    if command == "restore":
+        options = list_lines(os.path.join(ROOT, f"{DIR_PREFIX}{branch}.remove"))
+    else:
+        options = list_lines(os.path.join(ROOT, f"forcedelete-{branch}.list"))
+
+    return [option for option in options if option.startswith(current)]
+
+
 def candidates(words, current):
     """Possible values for the word being typed, given the words before it."""
     if not words:
         return [command for command in COMMANDS if command.startswith(current)]
 
     command = words[0]
-    kind = COMMANDS.get(command)
+    options, branch_kind = COMMANDS.get(command, ([], None))
+    previous = words[-1] if len(words) > 1 else None
 
-    if len(words) == 1:
-        if kind == "branch":
-            options = [PUBLIC, *betas()]
-        elif kind == "beta":
-            options = betas()
+    # The value of --branch.
+    if previous == "--branch":
+        if branch_kind == "branch":
+            values = [PUBLIC, *betas()]
+        elif branch_kind == "beta":
+            values = betas()
         else:
-            options = []
-        return [option for option in options if option.startswith(current)]
+            values = []
+        return [value for value in values if value.startswith(current)]
 
-    branch = words[1]
+    # Free text: a label, or the message of --notify (which may also be skipped).
+    if previous == "--label" or (previous == "--notify" and not current.startswith("-")):
+        return []
 
-    if command == "exclude":
-        return paths_under(os.path.join(ROOT, "base"), current)
+    unused = [option for option in options if option not in words]
 
-    if command == "restore":
-        options = list_lines(os.path.join(ROOT, f"{DIR_PREFIX}{branch}.remove"))
-    elif command == "force-delete":
-        options = paths_under(os.path.join(ROOT, "base"), current)
-        if branch != PUBLIC:
-            options += paths_under(os.path.join(ROOT, f"{DIR_PREFIX}{branch}"), current)
-        return sorted(set(options))
-    elif command == "cancel-delete":
-        options = list_lines(os.path.join(ROOT, f"forcedelete-{branch}.list"))
-    else:
-        options = []
+    if current.startswith("-") or command not in PATH_COMMANDS:
+        return [option for option in unused if option.startswith(current)]
 
-    return [option for option in options if option.startswith(current)]
+    # A list command: paths once the branch is given, otherwise --branch first.
+    if "--branch" in words:
+        index = words.index("--branch")
+        if index + 1 < len(words):
+            return path_candidates(command, words[index + 1], current)
+
+    return [option for option in unused if option.startswith(current)]
 
 
 def setup_readline():
