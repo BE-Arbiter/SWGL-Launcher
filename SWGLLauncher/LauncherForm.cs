@@ -639,7 +639,7 @@ namespace SWGLLauncher
                 (SteamShortcutsService.SteamArtwork.Cover, "steam.image.cover", "SWGL/cover.png"),
                 (SteamShortcutsService.SteamArtwork.WideCover, "steam.image.wide", "SWGL/wide_cover.jpg"),
                 (SteamShortcutsService.SteamArtwork.Logo, "steam.image.logo", "SWGL/logo.png"),
-                (SteamShortcutsService.SteamArtwork.Hero, "steam.image.hero", string.Empty),
+                (SteamShortcutsService.SteamArtwork.Hero, "steam.image.hero", "SWGL/background.png"),
             ];
 
             int installed = 0;
@@ -908,7 +908,7 @@ namespace SWGLLauncher
                 ("steam.image.cover", "SWGL/cover.png"),
                 ("steam.image.wide", "SWGL/wide_cover.jpg"),
                 ("steam.image.logo", "SWGL/logo.png"),
-                ("steam.image.hero", string.Empty),
+                ("steam.image.hero", "SWGL/background.png"),
             })
             {
                 string configured = _config.GetString(key, fallback);
