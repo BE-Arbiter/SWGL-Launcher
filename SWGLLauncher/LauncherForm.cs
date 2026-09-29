@@ -40,7 +40,7 @@ namespace SWGLLauncher
         /// plus : ceux que publie le mod. Tout le reste du GameData est laisse en place.
         /// </summary>
         private const string DefaultDeletablePatterns =
-            "base/zzzzzzz_SWGL_JKJO.pk3,SWGL/SWGL_*.pk3,SWGL/*.dll";
+            "base/zzzzzzz_SWGL_JKJO.pk3,SWGL/SWGL_*.pk3,SWGL/*.dll,SWGL/SWGL_Version.info";
 
         private static readonly Color MenuBackColor = Color.FromArgb(22, 22, 26);
 
@@ -413,6 +413,14 @@ namespace SWGLLauncher
             };
             integrityItem.Click += (_, _) => _ = RunSyncAsync(applyChanges: false, fullVerify: true);
             menu.Items.Add(integrityItem);
+            menu.Items.Add(new ToolStripSeparator());
+
+            var uninstallItem = new ToolStripMenuItem("Uninstall Galactic Legacy...")
+            {
+                Enabled = !_isSyncing,
+            };
+            uninstallItem.Click += (_, _) => _ = UninstallAsync();
+            menu.Items.Add(uninstallItem);
 
             // Le bouton est en bas de la fenetre : le menu s'ouvre vers le haut.
             menu.Show(btnOptions, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
@@ -686,6 +694,78 @@ namespace SWGLLauncher
                 "Cancel");
 
             return confirm.ShowDialog(this) == DialogResult.OK;
+        }
+
+        // ------------------------------------------------------------------
+        // Desinstallation
+        // ------------------------------------------------------------------
+
+        private async Task UninstallAsync()
+        {
+            if (_isSyncing)
+            {
+                return;
+            }
+
+            using (var confirm = new TextPromptForm(
+                _accentColor,
+                DpiScale,
+                "Uninstall Galactic Legacy",
+                "This deletes the mod from " + Path.GetFullPath(InstallRoot) + ": the SWGL folder, "
+                    + "the mod and Jedi Outcast files in base, and the game's executables and DLLs. "
+                    + "The launcher stays, so the game can be installed again with Update.\n\n"
+                    + "Everything in the SWGL folder is deleted. This cannot be undone.\n\n"
+                    + "The Steam shortcut, if you added one, is not removed: delete it from "
+                    + "your Steam library yourself if you no longer want it.",
+                "Uninstall",
+                "Cancel"))
+            {
+                if (confirm.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+            }
+
+            // La musique peut etre lue depuis un fichier du dossier SWGL : il serait verrouille.
+            _music.Stop();
+
+            SetSyncing(true);
+            IProgress<SyncProgress> progress = CreateProgress();
+            Log($"Uninstall — {Path.GetFullPath(InstallRoot)}");
+
+            try
+            {
+                string[] keep =
+                [
+                    Environment.ProcessPath ?? Application.ExecutablePath,
+                    _config.FilePath,
+                    StatePath,
+                ];
+
+                UninstallService.Result result = await Task.Run(
+                    () => UninstallService.Uninstall(InstallRoot, StatePath, keep, progress));
+
+                foreach (string failure in result.Failed)
+                {
+                    Log($"Could not remove {failure}");
+                }
+
+                progress.Report(result.Failed.Count == 0
+                    ? new SyncProgress("Galactic Legacy uninstalled", $"{result.Removed} file(s) removed", 1)
+                    : new SyncProgress(
+                        "Uninstall incomplete",
+                        $"{result.Failed.Count} file(s) could not be removed, see the log (is the game running?)",
+                        0));
+            }
+            catch (Exception exception)
+            {
+                LogError("uninstall", exception);
+                progress.Report(new SyncProgress("Uninstall failed", exception.Message, 0));
+            }
+            finally
+            {
+                SetSyncing(false);
+            }
         }
 
         // ------------------------------------------------------------------

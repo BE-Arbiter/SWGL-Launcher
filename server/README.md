@@ -173,6 +173,11 @@ une branche qui n'en a encore aucun reçoit la date du jour (`2026.09.22.2143`).
 contient des espaces se met entre guillemets : `swgl-sync rename --branch elween --label "Ep3 test 4"`.
 Les options peuvent venir dans n'importe quel ordre ; les chemins se placent après.
 
+`update` d'une beta écrit d'abord `beta-<code>/SWGL/SWGL_Version.info`, qui part donc chez les
+joueurs dans `SWGL/` : `<libellé> - YYMMDD.HHmmss` (`Ep3 test 5 - 260929.203722`), ou
+`Unknown beta branch - …` si la branche n'a pas encore de libellé. Le public n'en a pas. Le
+launcher le supprime au retour sur le public.
+
 ### Créer une beta
 
 ```bash
@@ -233,7 +238,7 @@ Cette fonction demande un `SWGLManifest` récent (option `--remove-list`) : l'an
 
 Quand un canal ne publie plus un fichier, le launcher le supprime s'il l'avait lui-même installé
 (les fichiers d'une beta disparaissent au retour sur le public), ou s'il correspond à
-`base/zzzzzzz_SWGL_JKJO.pk3`, `SWGL/SWGL_*.pk3` ou `SWGL/*.dll`. Pour faire disparaître autre
+`base/zzzzzzz_SWGL_JKJO.pk3`, `SWGL/SWGL_*.pk3`, `SWGL/*.dll` ou `SWGL/SWGL_Version.info`. Pour faire disparaître autre
 chose, par exemple une map ou une config qu'une ancienne version installée à la main a laissée,
 on le marque sur la branche concernée, `public` ou un code de beta :
 

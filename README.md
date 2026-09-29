@@ -136,6 +136,7 @@ longer lists them: files the launcher installed itself, and files matching
 | `base/zzzzzzz_SWGL_JKJO.pk3` | The mod's only file in `base`; nothing else there is ever deleted. |
 | `SWGL/SWGL_*.pk3` | The mod's archives. |
 | `SWGL/*.dll` | The mod's game modules. |
+| `SWGL/SWGL_Version.info` | The beta label and build time, written by `swgl-sync` on betas only. |
 
 Everything else in `install.path` is left alone, whatever it is: the stock game, other mods,
 saves, configuration, interrupted downloads (`.part`). In `sync.deletable`, `*` stays inside a

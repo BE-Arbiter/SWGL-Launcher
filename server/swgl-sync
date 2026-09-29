@@ -299,6 +299,39 @@ update_public() {
     chown "$OWNER:$GROUP" "$(manifest_file "$PUBLIC")"
 }
 
+# Label of a branch: the --label given, else the one already published.
+branch_label() {
+    if [[ $HAS_LABEL -eq 1 ]]; then
+        echo "$LABEL"
+        return
+    fi
+
+    local manifest
+    manifest=$(manifest_file "$1")
+    [[ -f "$manifest" ]] || return 0
+    python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8-sig")).get("version") or "")' \
+        "$manifest" 2>/dev/null || true
+}
+
+# SWGL/SWGL_Version.info in the beta, written before the scan so players get it
+# in their GameData: "<label> - YYMMDD.HHmmss". The launcher deletes it on the way
+# back to public (SWGL/SWGL_Version.info is in its deletable patterns).
+write_version_file() {
+    local code=$1
+    local folder="$ROOT/$DIR_PREFIX$code/SWGL"
+    local file="$folder/SWGL_Version.info"
+    local label
+    label=$(branch_label "$code")
+    [[ -n "$label" ]] || label="Unknown beta branch"
+
+    [[ -d "$folder" ]] || install -d -o "$OWNER" -g "$GROUP" -m 755 "$folder"
+    printf '%s - %s' "$label" "$(date +%y%m%d.%H%M%S)" > "$file.tmp"
+    chown "$OWNER:$GROUP" "$file.tmp"
+    chmod 644 "$file.tmp"
+    mv "$file.tmp" "$file"
+    echo "  SWGL/SWGL_Version.info: $(cat "$file")"
+}
+
 update_beta() {
     local code=$1
     local home="$ROOT/$DIR_PREFIX$code"
@@ -326,6 +359,7 @@ update_beta() {
     [[ -s "$list" ]] && deletions=(--delete-list "$list")
 
     echo "== beta $code"
+    write_version_file "$code"
     "$MANIFEST_TOOL" --source "$home" --source-prefix "/$DIR_PREFIX$code" \
                      "${base[@]}" \
                      "${removals[@]}" \
