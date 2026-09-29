@@ -4,6 +4,9 @@
 [Ll]og/
 [Ll]ogs/
 
+# Manifest tool built for the server (see README)
+/out-linux/
+
 ## Visual Studio
 .vs/
 *.user

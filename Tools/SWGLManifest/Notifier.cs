@@ -46,22 +46,46 @@ namespace SWGLLauncher.ManifestTool
         public bool HasChanges =>
             IsNew || Added.Count > 0 || Updated.Count > 0 || Removed.Count > 0 || DeletionsChanged;
 
-        /// <summary>Compare deux manifestes : le contenu seulement, pas le libelle.</summary>
-        public static BranchChanges Compare(Manifest? previous, Manifest current)
+        /// <summary>
+        /// Compare deux manifestes : le contenu seulement, pas le libelle.
+        /// </summary>
+        /// <param name="publicFiles">
+        /// Pour une beta, les fichiers du public qu'elle reprend : un fichier identique au public
+        /// n'est pas compte (l'annonce du public s'en charge), sauf s'il remplace un fichier propre
+        /// a la beta. Une nouvelle beta se compare au public, pas a une installation vide.
+        /// Null pour le public, compare a son seul manifeste precedent.
+        /// </param>
+        /// <param name="sourcePrefix">Prefixe FTP des fichiers propres a la beta ("/beta-code").</param>
+        public static BranchChanges Compare(
+            Manifest? previous, Manifest current, IReadOnlyList<ManifestEntry>? publicFiles = null, string sourcePrefix = "/")
         {
             var changes = new BranchChanges { Version = current.Version, IsNew = previous is null };
-            var before = (previous?.Files ?? [])
+            var before = (previous?.Files ?? publicFiles ?? [])
                 .GroupBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            var fromPublic = (publicFiles ?? [])
+                .GroupBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            string ownPrefix = sourcePrefix.TrimEnd('/') + "/";
 
             foreach (ManifestEntry file in current.Files)
             {
-                if (!before.Remove(file.Path, out ManifestEntry? old))
+                bool hadOld = before.Remove(file.Path, out ManifestEntry? old);
+
+                // Identique au public, et ne remplace pas un fichier propre a la beta : le
+                // testeur l'a deja s'il vient du public, ou le recoit avec l'annonce du public.
+                if (fromPublic.TryGetValue(file.Path, out ManifestEntry? shared)
+                    && SameContent(shared, file)
+                    && (old is null || !old.From.StartsWith(ownPrefix, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                if (!hadOld)
                 {
                     changes.Added.Add(new ChangedFile { Path = file.Path, Size = file.Size });
                 }
-                else if (old.Size != file.Size
-                    || !old.Sha256.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+                else if (!SameContent(old!, file))
                 {
                     changes.Updated.Add(new ChangedFile { Path = file.Path, Size = file.Size });
                 }
@@ -74,6 +98,9 @@ namespace SWGLLauncher.ManifestTool
 
             return changes;
         }
+
+        private static bool SameContent(ManifestEntry a, ManifestEntry b) =>
+            a.Size == b.Size && a.Sha256.Equals(b.Sha256, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

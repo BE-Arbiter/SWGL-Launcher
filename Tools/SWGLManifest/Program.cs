@@ -84,6 +84,12 @@ namespace SWGLLauncher.ManifestTool
                 AddDirectory(entries, options.BaseDirectory, options.BasePrefix, options, removals, removalUsed, known, stats);
             }
 
+            // Les fichiers du public tels que la beta les reprend : l'annonce d'une beta ne
+            // compte que ce qui en differe. Null pour le public lui-meme.
+            List<ManifestEntry>? publicFiles = options.BaseManifest is not null || options.BaseDirectory is not null
+                ? [.. entries.Values]
+                : null;
+
             AddDirectory(entries, options.Source, options.SourcePrefix, options, [], [], known, stats);
 
             // Un motif qui ne retire rien est presque toujours une faute de frappe.
@@ -119,7 +125,8 @@ namespace SWGLLauncher.ManifestTool
             // Ce qui a change depuis le manifeste precedent, pour l'annonce Discord.
             if (options.ChangesFile is not null)
             {
-                File.WriteAllText(options.ChangesFile, JsonSerializer.Serialize(BranchChanges.Compare(previous, manifest)));
+                BranchChanges changes = BranchChanges.Compare(previous, manifest, publicFiles, options.SourcePrefix);
+                File.WriteAllText(options.ChangesFile, JsonSerializer.Serialize(changes));
             }
 
             long total = manifest.Files.Sum(file => file.Size);
