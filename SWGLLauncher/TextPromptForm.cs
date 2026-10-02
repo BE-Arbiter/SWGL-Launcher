@@ -43,7 +43,8 @@ namespace SWGLLauncher
             string cancelText = "Cancel",
             params PromptField[] fields)
         {
-            // Sans champ, la boite sert de simple confirmation.
+            // Sans champ, la boite sert de simple confirmation ; sans texte d'annulation, de
+            // simple avis a un seul bouton.
             _fields = fields;
 
             int Scaled(int amount) => (int)Math.Round(amount * scale);
@@ -151,6 +152,13 @@ namespace SWGLLauncher
                 Size = new Size(okWidth, Scaled(28)),
                 Location = new Point(cancel.Left - Scaled(8) - okWidth, y + Scaled(6)),
             };
+
+            // Sans texte d'annulation, simple avis : le seul bouton prend la place d'Annuler.
+            if (cancelText.Length == 0)
+            {
+                cancel.Visible = false;
+                ok.Left = cancel.Right - okWidth;
+            }
 
             ok.Click += (_, _) => Accept();
             cancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };

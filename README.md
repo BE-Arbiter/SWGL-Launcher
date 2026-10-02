@@ -11,7 +11,9 @@ channel or on a private beta channel, then starts the game. It ships as a single
 
 - **Borderless window** with a configurable background, looping music and a mute button.
 - **Public and beta channels.** A tester enters a code; the launcher connects to the matching
-  account and installs that build. Switching back to the public release is one click.
+  account and installs that build. Switching back to the public release is one click. When the
+  server still refuses a beta code after a few retries, the launcher asks whether to forget the
+  code and go back to the public release.
 - **State-based updates.** A channel is described by a manifest listing every file with its
   size and SHA-256. The launcher makes the installation match it, so the same code path
   installs, repairs, updates, switches channel and rolls back.
@@ -86,7 +88,7 @@ Paths are relative to the executable or absolute; colours are `#RRGGBB` or `#AAR
 | `install.path` | Folder to synchronise. `.` means the launcher's own folder. |
 | `state.file` | Local state written by the launcher. |
 | `sync.deletable` | The only files the cleanup may delete — see below. |
-| `sync.download.retries` | Automatic retries of an interrupted download, each resuming where it stopped. |
+| `sync.download.retries` | Automatic retries of an interrupted download, each resuming where it stopped, and of a refused login before the launcher reports it. |
 | `ftp.host`, `ftp.port`, `ftp.tls`, `ftp.accept.any.certificate`, `ftp.timeout.ms` | Connection. `explicit` means FTPS on port 21. |
 | `ftp.noop.interval.ms` | Keeps the control connection alive during long transfers; `0` turns it off. |
 | `log.ftp.verbose` | Log every FTP command, not just warnings and errors. Passwords stay masked. |

@@ -256,12 +256,20 @@ namespace SWGLLauncher
                     totalBytes > 0 ? fileStartBytes / (double)totalBytes : -1));
 
                 bool resuming = File.Exists(localPath + PartialSuffix);
+                bool reconnect = false;
                 InstalledEntry result;
 
                 for (int attempt = 1; ; attempt++)
                 {
                     try
                     {
+                        // La reconnexion fait partie de l'essai : un refus passager du serveur
+                        // (relance, beta en cours de creation) est retente comme une coupure.
+                        if (reconnect)
+                        {
+                            await ftp.ReconnectAsync(cancellationToken);
+                        }
+
                         result = await DownloadVerifiedAsync(
                             ftp, entry, localPath, fileProgress, cancellationToken);
                         break;
@@ -269,7 +277,8 @@ namespace SWGLLauncher
                     catch (Exception exception) when (
                         attempt <= DownloadRetries
                         && !cancellationToken.IsCancellationRequested
-                        && IsTransient(exception))
+                        && (IsTransient(exception)
+                            || (reconnect && exception is FluentFTP.Exceptions.FtpAuthenticationException)))
                     {
                         // Coupure reseau : le fichier partiel est garde, on se reconnecte
                         // et le telechargement reprend a l'octet ou il s'est arrete.
@@ -282,7 +291,7 @@ namespace SWGLLauncher
                             totalBytes > 0 ? fileStartBytes / (double)totalBytes : -1));
 
                         await Task.Delay(TimeSpan.FromSeconds(2 * attempt), cancellationToken);
-                        await ftp.ReconnectAsync(cancellationToken);
+                        reconnect = true;
                         resuming = true;
                     }
                 }

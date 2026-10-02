@@ -324,11 +324,13 @@ sudo swgl-sync update --branch elween --label "Ep3 test 5" --notify
 Big update            (en gras)
 New map: Kashyyyk
 
-New branch: elween — Ep3 test 5
-• 214 files added (15.2 GB to download)
+Branch updated: Release 3
+Branch code: public
+• 3 files added, 1 updated, 1 removed compared to the previous version (812 MB to download)
 
-Branch updated: public — Release 3
-• 3 files added, 1 updated, 1 removed (812 MB to download)
+New branch: Ep3 test 5
+Branch code: elween
+• 12 files added, 2 updated compared to public (640 MB to download)
 
 @Testers
 
@@ -344,7 +346,11 @@ Discord (2000 caractères) : c'est le résumé qui est raccourci, le détail res
 - Une branche est « changée » si ses fichiers (ajoutés, modifiés, retirés) ou sa liste de
   suppressions forcées ont bougé ; un simple changement de libellé ne compte pas. Une branche
   sans manifeste précédent apparaît en *New branch*.
-- Quand `base` change, les betas changent aussi, puisqu'elles l'embarquent : elles apparaissent.
+- Le titre porte le libellé, la ligne *Branch code* le code (`public` ou celui de la beta).
+- Le public se compare à sa version précédente. Une beta ne compte que ce qui diffère du
+  public : une nouvelle beta se compare au public (*compared to public*), pas à une installation
+  vide ; ensuite, à sa version précédente. Un changement de `base` n'apparaît qu'au public, sauf
+  pour un fichier que la beta remplaçait et qu'elle rend au public : ses testeurs le retéléchargent.
 - Sans changement, rien n'est envoyé. Sans message, seul le résumé part.
 - Le détail fichier par fichier est dans `changes.txt`, joint au message : Discord en montre un
   aperçu dépliable.

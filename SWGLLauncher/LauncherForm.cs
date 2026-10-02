@@ -835,6 +835,8 @@ namespace SWGLLauncher
             }
 
             string? betaCode = _selectedCode.Length == 0 ? null : _selectedCode;
+            string? refusedBeta = null;
+            int retries = Math.Max(0, _config.GetInt("sync.download.retries", 3));
 
             SetSyncing(true);
             _syncCancellation = new CancellationTokenSource();
@@ -851,7 +853,7 @@ namespace SWGLLauncher
                 progress.Report(new SyncProgress("Connecting to the server...", string.Empty));
 
                 await using var ftp = new FtpClientService(_config) { Log = Log };
-                await ftp.ConnectAsync(betaCode, token);
+                await ConnectWithRetriesAsync(ftp, betaCode, retries, progress, token);
                 Log($"Connected as {ftp.UserName}");
 
                 progress.Report(new SyncProgress("Reading the manifest...", ftp.UserName));
@@ -867,7 +869,7 @@ namespace SWGLLauncher
                     DeletablePatterns = _config
                         .GetString("sync.deletable", DefaultDeletablePatterns)
                         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-                    DownloadRetries = Math.Max(0, _config.GetInt("sync.download.retries", 3)),
+                    DownloadRetries = retries,
                     Log = Log,
                 };
 
@@ -917,11 +919,18 @@ namespace SWGLLauncher
                 Log("Cancelled");
                 progress.Report(new SyncProgress("Cancelled", string.Empty, 0));
             }
+            catch (FtpAuthenticationException exception) when (betaCode is not null)
+            {
+                // Le compte d'une beta n'existe plus quand elle est fermee, mais un refus peut
+                // aussi etre passager : le joueur decide, une fois la synchronisation terminee.
+                LogError("login refused", exception);
+                progress.Report(new SyncProgress("Login refused", $"The server refused the beta code \"{betaCode}\"", 0));
+                refusedBeta = betaCode;
+            }
             catch (FtpAuthenticationException exception)
             {
                 LogError("login refused", exception);
-                progress.Report(new SyncProgress(
-                    "Login refused", "Invalid beta code, or the beta is closed", 0));
+                progress.Report(new SyncProgress("Login refused", "The server refused the public login", 0));
             }
             catch (Exception exception)
             {
@@ -934,6 +943,70 @@ namespace SWGLLauncher
                 _syncCancellation = null;
                 SetSyncing(false);
             }
+
+            if (refusedBeta is not null)
+            {
+                OnBetaRefused(refusedBeta);
+            }
+        }
+
+        /// <summary>
+        /// Se connecte au canal, en retentant un refus de connexion : il peut etre passager
+        /// (serveur relance, beta en cours de creation). Le dernier refus remonte tel quel.
+        /// </summary>
+        private async Task ConnectWithRetriesAsync(
+            FtpClientService ftp,
+            string? betaCode,
+            int retries,
+            IProgress<SyncProgress> progress,
+            CancellationToken token)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await ftp.ConnectAsync(betaCode, token);
+                    return;
+                }
+                catch (FtpAuthenticationException exception) when (attempt <= retries)
+                {
+                    Log($"Login refused ({exception.Message}), retrying {attempt}/{retries}");
+                    progress.Report(new SyncProgress(
+                        $"Login refused, retrying ({attempt}/{retries})", string.Empty, 0));
+                    await Task.Delay(TimeSpan.FromSeconds(2 * attempt), token);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Le serveur refuse le code d'une beta : elle est fermee, le code est faux, ou le refus
+        /// est passager. On demande au joueur s'il retire le code pour revenir au public, qui est
+        /// alors aussitot verifie ; sinon le code est garde pour un prochain essai.
+        /// </summary>
+        private void OnBetaRefused(string code)
+        {
+            using (var prompt = new TextPromptForm(
+                _accentColor,
+                DpiScale,
+                "Login refused",
+                $"The server refused the beta code \"{code}\": the code is wrong or this beta is closed. "
+                    + "It can also be a temporary server issue.\n\n"
+                    + "Remove this code and go back to the public release? "
+                    + "Then click Update to install the public release in place of the beta files.",
+                "Remove code",
+                "Keep"))
+            {
+                if (prompt.ShowDialog(this) != DialogResult.OK)
+                {
+                    Log($"Beta {code} refused: code kept");
+                    return;
+                }
+            }
+
+            Log($"Beta {code} refused: code removed, back to {PublicChannelLabel}");
+            _betaCodes.RemoveAll(known => known.Equals(code, StringComparison.OrdinalIgnoreCase));
+            SaveBetaCodes();
+            SelectChannel(string.Empty);
         }
 
         private void SetSyncing(bool syncing)

@@ -42,6 +42,13 @@ namespace SWGLLauncher.ManifestTool
         [JsonPropertyName("deletionsChanged")]
         public bool DeletionsChanged { get; set; }
 
+        /// <summary>
+        /// Reference de la comparaison : "previous" (la version precedente de la branche),
+        /// "public" (une nouvelle beta), ou "none" (un nouveau public : tout est a telecharger).
+        /// </summary>
+        [JsonPropertyName("comparedTo")]
+        public string ComparedTo { get; set; } = string.Empty;
+
         [JsonIgnore]
         public bool HasChanges =>
             IsNew || Added.Count > 0 || Updated.Count > 0 || Removed.Count > 0 || DeletionsChanged;
@@ -59,7 +66,12 @@ namespace SWGLLauncher.ManifestTool
         public static BranchChanges Compare(
             Manifest? previous, Manifest current, IReadOnlyList<ManifestEntry>? publicFiles = null, string sourcePrefix = "/")
         {
-            var changes = new BranchChanges { Version = current.Version, IsNew = previous is null };
+            var changes = new BranchChanges
+            {
+                Version = current.Version,
+                IsNew = previous is null,
+                ComparedTo = previous is not null ? "previous" : publicFiles is not null ? "public" : "none",
+            };
             var before = (previous?.Files ?? publicFiles ?? [])
                 .GroupBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
@@ -159,12 +171,19 @@ namespace SWGLLauncher.ManifestTool
 
             foreach ((string name, BranchChanges changes) in branches)
             {
-                string title = $"{(changes.IsNew ? "New branch" : "Branch updated")}: {name}"
-                    + (changes.Version.Length > 0 ? $" — {changes.Version}" : string.Empty);
+                // Le libelle en titre, le code de la branche dessous ; sans libelle, le code seul.
+                string title = $"{(changes.IsNew ? "New branch" : "Branch updated")}: "
+                    + (changes.Version.Length > 0 ? changes.Version : name);
+                string code = changes.Version.Length > 0 ? $"Branch code: {name}\n" : string.Empty;
 
-                summary.Append($"**{title}**\n• {Describe(changes)}\n\n");
+                summary.Append($"**{title}**\n{code}• {Describe(changes)}\n\n");
 
                 details.AppendLine($"== {title}");
+                if (code.Length > 0)
+                {
+                    details.Append(code);
+                }
+
                 foreach (ChangedFile file in changes.Added)
                 {
                     details.AppendLine($"+ {file.Path} ({FormatSize(file.Size)})");
@@ -258,13 +277,22 @@ namespace SWGLLauncher.ManifestTool
                 parts.Add("forced deletions changed");
             }
 
+            // Par rapport a quoi : un fichier d'avant ce champ vaut "previous" s'il n'etait pas nouveau.
+            string reference = changes.ComparedTo switch
+            {
+                "public" => " compared to public",
+                "none" => " for a full install",
+                "previous" => " compared to the previous version",
+                _ => changes.IsNew ? string.Empty : " compared to the previous version",
+            };
+
             if (parts.Count == 0)
             {
-                return "no files";
+                return "no files" + reference;
             }
 
             long download = changes.Added.Sum(file => file.Size) + changes.Updated.Sum(file => file.Size);
-            string text = string.Join(", ", parts);
+            string text = string.Join(", ", parts) + reference;
 
             return download > 0 ? $"{text} ({FormatSize(download)} to download)" : text;
         }
