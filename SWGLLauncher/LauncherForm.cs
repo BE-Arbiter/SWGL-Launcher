@@ -130,7 +130,7 @@ namespace SWGLLauncher
             Color closeHoverBack = _config.GetColor(
                 "titlebar.close.hover.background", Color.FromArgb(192, 192, 48, 48));
 
-            foreach (TitleBarButton button in new[] { btnLog, btnMusic, btnMinimize, btnClose })
+            foreach (TitleBarButton button in new[] { btnLog, btnMusic, btnMinimize, btnClose, btnModDb, btnNexus, btnDiscord, btnHelp })
             {
                 button.GlyphColor = glyph;
                 button.HoverGlyphColor = glyphHover;
@@ -144,6 +144,14 @@ namespace SWGLLauncher
                 button.AccentColor = _accentColor;
             }
 
+            btnNexus.Icon = LoadIcon("icon.nexus", "icon_nexus.png");
+            btnModDb.Icon = LoadIcon("icon.moddb", "icon_moddb.png");
+            btnDiscord.Icon = LoadIcon("icon.discord", "icon_discord.png");
+            btnDiscord.IconRound = true;
+            btnModDb.IconRound = true;
+            btnHelp.BadgeColor = _accentColor;
+            toolTip.AccentColor = _accentColor;
+
             lnkPatchNotes.LinkColor = _accentColor;
             lnkPatchNotes.VisitedLinkColor = _accentColor;
             lnkPatchNotes.ActiveLinkColor = Color.White;
@@ -155,6 +163,21 @@ namespace SWGLLauncher
 
             LoadChannels();
             InitializeStatusFromInstalledState();
+        }
+
+        /// <summary>Charge un logo (fichier a cote de l'exe ou ressource embarquee).</summary>
+        private Image? LoadIcon(string key, string defaultFile)
+        {
+            byte[]? bytes = Assets.ReadAllBytes(_config, key, defaultFile);
+
+            if (bytes is null)
+            {
+                return null;
+            }
+
+            using var stream = new MemoryStream(bytes);
+            using var source = Image.FromStream(stream);
+            return new Bitmap(source);
         }
 
         /// <summary>
@@ -266,6 +289,14 @@ namespace SWGLLauncher
             if (_musicEnabled)
             {
                 StartMusic();
+            }
+
+            _ = RemovePreviousInstallerAsync();
+
+            // Hors d'un dossier de Jedi Academy pris en charge : installation propre.
+            if (!CheckGameFolder())
+            {
+                return;
             }
 
             if (SyncConfigured && _config.GetBool("sync.check.on.start", true))
@@ -396,6 +427,15 @@ namespace SWGLLauncher
 
             menu.Items.Add(channelItem);
             menu.Items.Add(new ToolStripSeparator());
+
+            var installItem = new ToolStripMenuItem("Install in a new folder...")
+            {
+                Enabled = !_isSyncing,
+                ToolTipText = "Copy Jedi Academy into a dedicated folder and install Galactic Legacy there.",
+            };
+            installItem.Click += (_, _) => ShowInstaller(
+                CurrentGameData() ?? GameInstallService.FindJediAcademy(), InstallerHint);
+            menu.Items.Add(installItem);
 
             var jediOutcastItem = new ToolStripMenuItem("Configure Jedi Outcast...");
             jediOutcastItem.Click += (_, _) => ConfigureJediOutcast();
@@ -1278,6 +1318,34 @@ namespace SWGLLauncher
         // Journal
         // ------------------------------------------------------------------
 
+        private void BtnModDb_Click(object? sender, EventArgs e) => OpenLink(
+            _config.GetString("link.moddb", "https://www.moddb.com/mods/swgl"));
+
+        private void BtnNexus_Click(object? sender, EventArgs e) => OpenLink(_config.GetString(
+            "link.nexus", "https://www.nexusmods.com/starwarsjediknightjediacademy/mods/86"));
+
+        private void BtnDiscord_Click(object? sender, EventArgs e) =>
+            OpenLink(_config.GetString("link.discord", "https://discord.gg/XMqBPvYkW"));
+
+        private void BtnHelp_Click(object? sender, EventArgs e)
+        {
+            using var faq = new FaqForm(_accentColor, DpiScale);
+            faq.ShowDialog(this);
+        }
+
+        /// <summary>Ouvre une page web dans le navigateur par defaut.</summary>
+        private void OpenLink(string url)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception exception)
+            {
+                SetStatus("Could not open the link", exception.Message);
+            }
+        }
+
         private void BtnLog_Click(object? sender, EventArgs e) => SetLogVisible(!pnlLog.Visible);
 
         private void SetLogVisible(bool visible)
@@ -1411,6 +1479,23 @@ namespace SWGLLauncher
             btnUpdate.Size = new Size(Scaled(170), fieldHeight);
             btnUpdate.Location = new Point(
                 btnStart.Left - gap - btnUpdate.Width, rowY);
+
+            // Liens et aide : deux pastilles de chaque cote du logo, centrees sur sa hauteur
+            // et a egale distance de ses bords ; celles des extremites, un peu plus hautes,
+            // dessinent un arc autour du logo. Le logo de l'image de fond s'etend de
+            // 35,7 % a 64,2 % de la largeur, sa mi-hauteur est a 15,2 % de la hauteur.
+            int badge = Scaled(70);
+            int badgeGap = Scaled(4);
+            int logoGap = Scaled(14);
+            int badgeTop = (int)(ClientSize.Height * 0.152) - (badge / 2);
+            int outerTop = badgeTop - Scaled(22);
+            int logoLeft = (int)(ClientSize.Width * 0.357);
+            int logoRight = (int)(ClientSize.Width * 0.642);
+
+            btnNexus.Bounds = new Rectangle(logoLeft - logoGap - badge, badgeTop, badge, badge);
+            btnModDb.Bounds = new Rectangle(btnNexus.Left - badgeGap - badge, outerTop, badge, badge);
+            btnDiscord.Bounds = new Rectangle(logoRight + logoGap, badgeTop, badge, badge);
+            btnHelp.Bounds = new Rectangle(btnDiscord.Right + badgeGap, outerTop, badge, badge);
 
             // Journal : bouton en haut a gauche, en miroir des boutons de la barre de titre,
             // panneau sur la gauche entre la barre de titre et la barre basse.

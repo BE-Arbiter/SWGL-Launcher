@@ -27,12 +27,15 @@ namespace SWGLLauncher
         private readonly Rectangle _titleBounds;
         private readonly Font _titleFont = new("Segoe UI Semibold", 11f);
         private readonly WebBrowser _browser;
+        private readonly int _cornerRadius;
 
         public PatchNotesForm(Color accent, float scale)
         {
             _accent = accent;
 
             int Scaled(int amount) => (int)Math.Round(amount * scale);
+
+            _cornerRadius = Scaled(RoundedWindow.DesignRadius);
 
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterParent;
@@ -166,6 +169,12 @@ namespace SWGLLauncher
             }
         }
 
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            RoundedWindow.Apply(this, _cornerRadius);
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
@@ -174,9 +183,8 @@ namespace SWGLLauncher
                 e.Graphics, Text, _titleFont, _titleBounds, _accent,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
-            // Filet d'accent autour de la fenetre, puisqu'elle n'a pas de bordure systeme.
-            using var pen = new Pen(Color.FromArgb(120, _accent));
-            e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+            // Filet d'accent le long du bord arrondi, puisque la fenetre n'a pas de bordure systeme.
+            RoundedWindow.DrawBorder(e.Graphics, this, Color.FromArgb(120, _accent), _cornerRadius);
         }
 
         protected override void Dispose(bool disposing)

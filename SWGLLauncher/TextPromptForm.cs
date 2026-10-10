@@ -33,6 +33,7 @@ namespace SWGLLauncher
 
         private readonly List<TextBox> _inputs = [];
         private readonly PromptField[] _fields;
+        private readonly int _cornerRadius;
 
         public TextPromptForm(
             Color accent,
@@ -49,12 +50,26 @@ namespace SWGLLauncher
 
             int Scaled(int amount) => (int)Math.Round(amount * scale);
 
+            _cornerRadius = Scaled(RoundedWindow.DesignRadius);
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
             BackColor = Color.FromArgb(18, 18, 22);
             AutoScaleMode = AutoScaleMode.None;
             KeyPreview = true;
+
+            // Largeur du contenu : 412 au minimum, elargie pour qu'un chemin pre-rempli
+            // tienne en entier dans son champ (jusqu'a 720).
+            var inputFont = new Font("Segoe UI", 10f);
+            int browseWidth = Scaled(92);
+            int contentWidth = Scaled(412);
+
+            foreach (PromptField field in _fields)
+            {
+                int needed = TextRenderer.MeasureText(field.Value, inputFont).Width + Scaled(16)
+                    + (field.Browse != PromptBrowse.None ? browseWidth : 0);
+                contentWidth = Math.Max(contentWidth, Math.Min(needed, Scaled(720)));
+            }
 
             var titleLabel = new Label
             {
@@ -71,7 +86,7 @@ namespace SWGLLauncher
                 Font = new Font("Segoe UI", 9f),
                 ForeColor = Color.FromArgb(190, 200, 200, 205),
                 AutoSize = true,
-                MaximumSize = new Size(Scaled(412), 0),
+                MaximumSize = new Size(contentWidth, 0),
                 Location = new Point(Scaled(24), Scaled(50)),
             };
 
@@ -102,12 +117,13 @@ namespace SWGLLauncher
                 {
                     BackColor = Color.FromArgb(28, 28, 32),
                     BorderStyle = BorderStyle.FixedSingle,
-                    Font = new Font("Segoe UI", 10f),
+                    Font = inputFont,
                     ForeColor = accent,
                     MaxLength = 260,
                     Multiline = true,
+                    WordWrap = false,
                     Location = new Point(Scaled(24), y),
-                    Size = new Size(Scaled(hasBrowse ? 320 : 412), Scaled(28)),
+                    Size = new Size(hasBrowse ? contentWidth - browseWidth : contentWidth, Scaled(28)),
                     Text = field.Value,
                 };
 
@@ -139,7 +155,7 @@ namespace SWGLLauncher
                 Text = cancelText,
                 AccentColor = accent,
                 Size = new Size(Scaled(84), Scaled(28)),
-                Location = new Point(Scaled(352), y + Scaled(6)),
+                Location = new Point(Scaled(24) + contentWidth - Scaled(84), y + Scaled(6)),
             };
 
             int okWidth = Scaled(Math.Max(84, (okText.Length * 8) + 24));
@@ -178,7 +194,7 @@ namespace SWGLLauncher
             };
 
             Controls.AddRange([ok, cancel]);
-            ClientSize = new Size(Scaled(460), y + Scaled(58));
+            ClientSize = new Size(contentWidth + Scaled(48), y + Scaled(58));
 
             if (_inputs.Count > 0)
             {
@@ -241,13 +257,18 @@ namespace SWGLLauncher
             Close();
         }
 
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            RoundedWindow.Apply(this, _cornerRadius);
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
 
-            // Filet d'accent autour de la boite, puisqu'elle n'a pas de bordure systeme.
-            using var pen = new Pen(Color.FromArgb(120, 232, 185, 35));
-            e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+            // Filet d'accent le long du bord arrondi, puisque la boite n'a pas de bordure systeme.
+            RoundedWindow.DrawBorder(e.Graphics, this, Color.FromArgb(120, 232, 185, 35), _cornerRadius);
         }
 
         protected override void WndProc(ref Message m)

@@ -8,10 +8,10 @@ namespace SWGLLauncher
     internal static class UninstallService
     {
         /// <summary>Dossier du mod, supprime en entier.</summary>
-        private const string ModFolder = "SWGL";
+        public const string ModFolder = "SWGL";
 
         /// <summary>Pk3 du mod depose dans "base".</summary>
-        private const string ModPk3 = "zzzzzzz_SWGL_JKJO.pk3";
+        public const string ModPk3 = "zzzzzzz_SWGL_JKJO.pk3";
 
         /// <summary>Resultat : fichiers supprimes, et ceux qui n'ont pas pu l'etre.</summary>
         public sealed record Result(int Removed, IReadOnlyList<string> Failed);

@@ -15,6 +15,18 @@ namespace SWGLLauncher
 
         /// <summary>Double chevron vers la gauche : refermer le journal.</summary>
         LogHide,
+
+        /// <summary>Lien vers la page du mod sur ModDB.</summary>
+        ModDb,
+
+        /// <summary>Lien vers la page du mod sur Nexus Mods.</summary>
+        Nexus,
+
+        /// <summary>Lien vers le serveur Discord.</summary>
+        Discord,
+
+        /// <summary>Point d'interrogation : ouvre la FAQ des erreurs courantes.</summary>
+        Help,
     }
 
     /// <summary>
@@ -58,6 +70,36 @@ namespace SWGLLauncher
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Color HoverBackColor { get; set; } = Color.FromArgb(64, 255, 255, 255);
 
+        /// <summary>Image a afficher a la place d'un glyphe vectoriel (logos des sites).</summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public Image? Icon { get; set; }
+
+        /// <summary>
+        /// Logo rond sans bordure : il est decoupe en disque et cerne d'un anneau noir,
+        /// pour s'accorder au logo Nexus qui a deja le sien.
+        /// </summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool IconRound { get; set; }
+
+        /// <summary>Vrai pour les pastilles (logos, aide) : pas de fond gris au survol.</summary>
+        /// <summary>
+        /// Epaisseur de l'anneau noir des pastilles rondes, en part du diametre : celle du
+        /// contour du logo Nexus (45 px pour 468 px visibles).
+        /// </summary>
+        private const float RingRatio = 0.096f;
+
+        /// <summary>Marge transparente du logo Nexus (22 px sur 512), en part de sa taille visible.</summary>
+        private const float NexusMarginRatio = 0.047f;
+
+        private bool IsBadge =>Icon is not null || Glyph == TitleBarGlyph.Help;
+
+        /// <summary>Couleur du disque du bouton d'aide.</summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public Color BadgeColor { get; set; } = Color.Gold;
+
         protected override void OnMouseEnter(EventArgs e)
         {
             base.OnMouseEnter(e);
@@ -85,7 +127,7 @@ namespace SWGLLauncher
                 base.OnPaintBackground(e);
             }
 
-            if (_hovered && HoverBackColor.A > 0)
+            if (_hovered && HoverBackColor.A > 0 && !IsBadge)
             {
                 using var brush = new SolidBrush(HoverBackColor);
                 e.Graphics.FillRectangle(brush, ClientRectangle);
@@ -96,6 +138,18 @@ namespace SWGLLauncher
         {
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            if (Glyph == TitleBarGlyph.Help)
+            {
+                DrawHelp(g);
+                return;
+            }
+
+            if (Icon is not null)
+            {
+                DrawIcon(g);
+                return;
+            }
 
             Color color = _hovered ? HoverGlyphColor : GlyphColor;
             float thickness = Math.Max(1.4f, Width / 22f);
@@ -131,7 +185,225 @@ namespace SWGLLauncher
                 case TitleBarGlyph.LogHide:
                     DrawDoubleChevron(g, pen, cx, cy, half, Glyph == TitleBarGlyph.LogShow);
                     break;
+
+                case TitleBarGlyph.ModDb:
+                    DrawBadge(g, pen, color, cx, cy, half * 1.7f, "db");
+                    break;
+
+                case TitleBarGlyph.Nexus:
+                    DrawBadge(g, pen, color, cx, cy, half * 1.7f, "N");
+                    break;
+
+                case TitleBarGlyph.Help:
+                    DrawBadge(g, pen, color, cx, cy, half * 1.7f, "?");
+                    break;
+
+                case TitleBarGlyph.Discord:
+                    DrawDiscord(g, color, cx, cy, half * 1.9f);
+                    break;
             }
+        }
+
+        /// <summary>
+        /// Zone carree de la pastille : 80 % du bouton au repos, 88 % au survol.
+        /// La marge laissee au repos accueille l'ombre et l'agrandissement.
+        /// </summary>
+        private RectangleF BadgeBounds()
+        {
+            float side = Math.Min(Width, Height) * (_hovered ? 0.88f : 0.8f);
+            return new RectangleF((Width - side) / 2f, (Height - side) / 2f, side, side);
+        }
+
+        /// <summary>Ombre douce sous la pastille, pour la detacher de l'image de fond.</summary>
+        private static void DrawBadgeShadow(Graphics g, RectangleF bounds)
+        {
+            for (int layer = 3; layer >= 1; layer--)
+            {
+                RectangleF halo = bounds;
+                halo.Inflate(layer * bounds.Width * 0.035f, layer * bounds.Width * 0.035f);
+                halo.Offset(0, bounds.Height * 0.03f);
+
+                using var brush = new SolidBrush(Color.FromArgb(55, 0, 0, 0));
+                g.FillEllipse(brush, halo);
+            }
+        }
+
+        /// <summary>Logo d'un site, centre ; decoupe en disque et cerne de noir si rond.</summary>
+        private void DrawIcon(Graphics g)
+        {
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            RectangleF bounds = BadgeBounds();
+            DrawBadgeShadow(g, bounds);
+
+            if (!IconRound)
+            {
+                // Le logo Nexus a une marge transparente (~4,5 % par cote) : on l'agrandit
+                // d'autant pour que sa partie visible ait la taille des pastilles rondes.
+                RectangleF full = bounds;
+                full.Inflate(bounds.Width * NexusMarginRatio, bounds.Height * NexusMarginRatio);
+                int fullSide = (int)Math.Round(full.Width);
+                g.DrawImage(ScaledIcon(fullSide), full.X, full.Y, fullSide, fullSide);
+                return;
+            }
+
+            // Anneau noir de la meme epaisseur relative que celui du logo Nexus.
+            using (var ring = new SolidBrush(Color.Black))
+            {
+                g.FillEllipse(ring, bounds);
+            }
+
+            RectangleF inner = bounds;
+            float ringWidth = bounds.Width * RingRatio;
+            inner.Inflate(-ringWidth, -ringWidth);
+
+            // Un SetClip n'est pas anticrenele : le disque est rempli avec l'image comme
+            // texture, ce qui donne un bord lisse. L'image est d'abord reduite en haute
+            // qualite a la taille du disque, une texture se reechantillonnant mal.
+            // Leger debord : les bords de l'image ne laissent pas de liseré clair.
+            int side = (int)Math.Ceiling(inner.Width * 1.04f);
+            Bitmap scaled = ScaledIcon(side);
+            float offset = (side - inner.Width) / 2f;
+
+            using var texture = new TextureBrush(scaled, WrapMode.Clamp);
+            texture.TranslateTransform(inner.X - offset, inner.Y - offset);
+            g.FillEllipse(texture, inner);
+        }
+
+        private Bitmap? _scaledIcon;
+        private Image? _scaledSource;
+
+        /// <summary>L'image reduite a la taille demandee, gardee tant qu'elle ne change pas.</summary>
+        private Bitmap ScaledIcon(int side)
+        {
+            if (_scaledIcon is not null && _scaledSource == Icon && _scaledIcon.Width == side)
+            {
+                return _scaledIcon;
+            }
+
+            _scaledIcon?.Dispose();
+            _scaledIcon = new Bitmap(side, side);
+            _scaledSource = Icon;
+
+            using Graphics g = Graphics.FromImage(_scaledIcon);
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            g.CompositingQuality = CompositingQuality.HighQuality;
+
+            using var attributes = new System.Drawing.Imaging.ImageAttributes();
+            attributes.SetWrapMode(WrapMode.TileFlipXY);
+            g.DrawImage(
+                Icon!, new Rectangle(0, 0, side, side),
+                0, 0, Icon!.Width, Icon.Height, GraphicsUnit.Pixel, attributes);
+
+            return _scaledIcon;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _scaledIcon?.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        /// <summary>Gros point d'interrogation blanc dans un disque a la couleur du mod, cerne de noir.</summary>
+        private void DrawHelp(Graphics g)
+        {
+            RectangleF bounds = BadgeBounds();
+            DrawBadgeShadow(g, bounds);
+
+            using (var ring = new SolidBrush(Color.Black))
+            {
+                g.FillEllipse(ring, bounds);
+            }
+
+            RectangleF disc = bounds;
+            float ringWidth = bounds.Width * RingRatio;
+            disc.Inflate(-ringWidth, -ringWidth);
+
+            using (var fill = new SolidBrush(_hovered ? Lighten(BadgeColor) : BadgeColor))
+            {
+                g.FillEllipse(fill, disc);
+            }
+
+            // Le "?" est converti en trace puis centre sur sa boite reelle : un DrawString
+            // le placerait trop bas, a cause de l'interligne de la police.
+            using var mark = new GraphicsPath();
+            using (var family = new FontFamily("Segoe UI"))
+            {
+                mark.AddString(
+                    "?", family, (int)FontStyle.Bold, disc.Height * 0.72f,
+                    PointF.Empty, StringFormat.GenericTypographic);
+            }
+
+            RectangleF glyph = mark.GetBounds();
+            using var center = new Matrix();
+            center.Translate(
+                disc.X + ((disc.Width - glyph.Width) / 2f) - glyph.X,
+                disc.Y + ((disc.Height - glyph.Height) / 2f) - glyph.Y);
+            mark.Transform(center);
+
+            using (var outline = new Pen(Color.Black, Math.Max(1f, disc.Width * 0.06f))
+            {
+                LineJoin = LineJoin.Round,
+            })
+            {
+                g.DrawPath(outline, mark);
+            }
+
+            g.FillPath(Brushes.White, mark);
+        }
+
+        private static Color Lighten(Color color) => Color.FromArgb(
+            color.A,
+            color.R + ((255 - color.R) / 4),
+            color.G + ((255 - color.G) / 4),
+            color.B + ((255 - color.B) / 4));
+
+        /// <summary>Pastille circulaire contenant un court texte (ModDB, Nexus, aide).</summary>
+        private static void DrawBadge(
+            Graphics g, Pen pen, Color color, float cx, float cy, float radius, string text)
+        {
+            g.DrawEllipse(pen, cx - radius, cy - radius, radius * 2, radius * 2);
+
+            using var font = new Font("Segoe UI", radius, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var brush = new SolidBrush(color);
+            using var format = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center,
+            };
+
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            g.DrawString(text, font, brush, new PointF(cx, cy + (radius * 0.04f)), format);
+        }
+
+        /// <summary>Silhouette stylisee du logo Discord : bulle arrondie et deux yeux.</summary>
+        private static void DrawDiscord(Graphics g, Color color, float cx, float cy, float radius)
+        {
+            float w = radius * 2f;
+            float h = radius * 1.5f;
+
+            using var path = new GraphicsPath();
+            path.AddArc(cx - (w / 2), cy - (h / 2), w * 0.5f, h * 0.7f, 180, 90);
+            path.AddArc(cx, cy - (h / 2), w * 0.5f, h * 0.7f, 270, 90);
+            path.AddLine(cx + (w / 2), cy + (h * 0.1f), cx + (w * 0.38f), cy + (h / 2));
+            path.AddLine(cx + (w * 0.38f), cy + (h / 2), cx - (w * 0.38f), cy + (h / 2));
+            path.AddLine(cx - (w * 0.38f), cy + (h / 2), cx - (w / 2), cy + (h * 0.1f));
+            path.CloseFigure();
+
+            using var brush = new SolidBrush(color);
+            g.FillPath(brush, path);
+
+            // Les yeux : taches sombres posees sur la forme.
+            using var eye = new SolidBrush(Color.FromArgb(230, 14, 14, 18));
+            float r = radius * 0.2f;
+            g.FillEllipse(eye, cx - (w * 0.22f) - r, cy - (r * 0.6f), r * 2, r * 2.4f);
+            g.FillEllipse(eye, cx + (w * 0.22f) - r, cy - (r * 0.6f), r * 2, r * 2.4f);
         }
 
         /// <summary>Deux chevrons cote a cote, pointant vers la droite ou vers la gauche.</summary>

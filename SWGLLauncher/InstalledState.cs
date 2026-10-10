@@ -19,6 +19,14 @@ namespace SWGLLauncher
         [JsonPropertyName("betaCode")]
         public string BetaCode { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Launcher qui a realise une installation propre dans ce dossier : le launcher copie
+        /// le supprime a son premier demarrage, puis efface cette valeur.
+        /// </summary>
+        [JsonPropertyName("installerLocation")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? InstallerLocation { get; set; }
+
         [JsonPropertyName("files")]
         public List<InstalledEntry> Files { get; set; } = [];
 

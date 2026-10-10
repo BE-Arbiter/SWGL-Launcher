@@ -81,7 +81,7 @@ namespace SWGLLauncher
             return best;
         }
 
-        private static string? ResolveSteamRoot(string? steamExecutable)
+        internal static string? ResolveSteamRoot(string? steamExecutable)
         {
             if (!string.IsNullOrWhiteSpace(steamExecutable) && File.Exists(steamExecutable))
             {

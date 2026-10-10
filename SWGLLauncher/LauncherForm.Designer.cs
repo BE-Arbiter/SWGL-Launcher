@@ -37,8 +37,49 @@ namespace SWGLLauncher
             pnlLog = new Panel();
             txtLog = new TextBox();
             lnkPatchNotes = new LinkLabel();
+            btnModDb = new TitleBarButton();
+            btnNexus = new TitleBarButton();
+            btnDiscord = new TitleBarButton();
+            btnHelp = new TitleBarButton();
+            toolTip = new DarkToolTip();
             pnlLog.SuspendLayout();
             SuspendLayout();
+            //
+            // btnModDb
+            //
+            btnModDb.Glyph = TitleBarGlyph.ModDb;
+            btnModDb.Name = "btnModDb";
+            btnModDb.Size = new Size(34, 34);
+            btnModDb.TabIndex = 9;
+            btnModDb.Click += BtnModDb_Click;
+            toolTip.SetToolTip(btnModDb, "Check the mod on Moddb");
+            //
+            // btnNexus
+            //
+            btnNexus.Glyph = TitleBarGlyph.Nexus;
+            btnNexus.Name = "btnNexus";
+            btnNexus.Size = new Size(34, 34);
+            btnNexus.TabIndex = 10;
+            btnNexus.Click += BtnNexus_Click;
+            toolTip.SetToolTip(btnNexus, "Check the mod on Nexusmod");
+            //
+            // btnDiscord
+            //
+            btnDiscord.Glyph = TitleBarGlyph.Discord;
+            btnDiscord.Name = "btnDiscord";
+            btnDiscord.Size = new Size(34, 34);
+            btnDiscord.TabIndex = 11;
+            btnDiscord.Click += BtnDiscord_Click;
+            toolTip.SetToolTip(btnDiscord, "Join us on Discord");
+            //
+            // btnHelp
+            //
+            btnHelp.Glyph = TitleBarGlyph.Help;
+            btnHelp.Name = "btnHelp";
+            btnHelp.Size = new Size(34, 34);
+            btnHelp.TabIndex = 12;
+            btnHelp.Click += BtnHelp_Click;
+            toolTip.SetToolTip(btnHelp, "Common errors");
             //
             // btnLog
             //
@@ -147,6 +188,10 @@ namespace SWGLLauncher
             Controls.Add(pnlLog);
             Controls.Add(lnkPatchNotes);
             Controls.Add(btnLog);
+            Controls.Add(btnModDb);
+            Controls.Add(btnNexus);
+            Controls.Add(btnDiscord);
+            Controls.Add(btnHelp);
             Controls.Add(btnOptions);
             Controls.Add(btnUpdate);
             Controls.Add(btnStart);
@@ -178,5 +223,10 @@ namespace SWGLLauncher
         private Panel pnlLog;
         private TextBox txtLog;
         private LinkLabel lnkPatchNotes;
+        private TitleBarButton btnModDb;
+        private TitleBarButton btnNexus;
+        private TitleBarButton btnDiscord;
+        private TitleBarButton btnHelp;
+        private DarkToolTip toolTip;
     }
 }

@@ -60,6 +60,28 @@ namespace SWGLLauncher
             return Directory.Exists(nested) ? nested : direct;
         }
 
+        /// <summary>Taille des assets a importer (ceux qui existent).</summary>
+        public static long AssetsSize(string jediOutcastGameData) => Assets
+            .Select(asset => new FileInfo(Path.Combine(jediOutcastGameData, "base", asset)))
+            .Where(file => file.Exists)
+            .Sum(file => file.Length);
+
+        /// <summary>
+        /// Vrai si les assets sont deja dans "base", a la meme taille que ceux de Jedi Outcast :
+        /// un nouvel import ne changerait rien.
+        /// </summary>
+        public static bool IsImported(string jediOutcastGameData, string targetBase) => Assets.All(asset =>
+        {
+            var source = new FileInfo(Path.Combine(jediOutcastGameData, "base", asset));
+            var target = new FileInfo(Path.Combine(targetBase, Prefix + asset));
+            return source.Exists && target.Exists && source.Length == target.Length;
+        });
+
+        /// <summary>Fichiers que l'import ecrit dans "base", temporaires compris : pour l'annuler.</summary>
+        public static IEnumerable<string> ImportedPaths(string targetBase) => Assets
+            .Select(asset => Path.Combine(targetBase, Prefix + asset))
+            .SelectMany(path => new[] { path, path + ".part" });
+
         /// <summary>
         /// Copie les assets de Jedi Outcast vers le dossier "base" de SWGL.
         /// </summary>
