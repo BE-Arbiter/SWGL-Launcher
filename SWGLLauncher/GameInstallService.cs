@@ -17,11 +17,11 @@ namespace SWGLLauncher
         private static readonly string[] RootFiles = ["OpenAL32.dll", "EaxMan.dll", "ifc22.dll"];
 
         /// <summary>Archives d'origine du dossier "base".</summary>
-        private static readonly string[] BaseAssets = ["assets0.pk3", "assets1.pk3", "assets2.pk3", "assets3.pk3"];
+        private static readonly string[] BaseAssets = ["assets0.pk3", "assets1.pk3", "assets2.pk3"];
 
         /// <summary>
-        /// Vrai si le dossier est un GameData de Jedi Academy, vierge ou deja mode : les quatre
-        /// archives de "base" doivent y etre (assets3.pk3 n'existe pas dans Jedi Outcast). Les
+        /// Vrai si le dossier est un GameData de Jedi Academy, vierge ou deja mode : les trois
+        /// archives de "base" doivent y etre. Les
         /// executables ne comptent pas, le mod les remplace par les siens.
         /// </summary>
         public static bool IsGameData(string folder)

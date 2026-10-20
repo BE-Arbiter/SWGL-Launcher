@@ -188,7 +188,7 @@ namespace SWGLLauncher
                 string? error =
                     gameData is null
                         ? "Jedi Academy was not found in this folder: it must contain "
-                            + "base\\assets0.pk3 to assets3.pk3."
+                            + "base\\assets0.pk3 to assets2.pk3."
                     : outcast.Length > 0 && outcastData is null
                         ? "Jedi Outcast was not found in this folder: it must contain jk2sp.exe, jk2mp.exe "
                             + "and jk2gamex86.dll. Leave the field empty to skip it."

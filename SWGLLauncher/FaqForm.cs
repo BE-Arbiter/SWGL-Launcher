@@ -75,14 +75,14 @@ namespace SWGLLauncher
             [
                 new("Jedi Academy not found",
                     "The launcher is not in a Jedi Academy folder, and the installation was cancelled. "
-                    + "Galactic Legacy needs the original Jedi Academy files (base\\assets0.pk3 to assets3.pk3).",
+                    + "Galactic Legacy needs the original Jedi Academy files (base\\assets0.pk3 to assets2.pk3).",
                 [
                     "Use Options > Install in a new folder... to install Galactic Legacy.",
                     "Or move the launcher into your Jedi Academy GameData folder and start it again.",
                 ]),
                 new("Jedi Academy was not found in this folder",
                     "The folder chosen in the installer does not contain the Jedi Academy archives "
-                    + "(base\\assets0.pk3 to assets3.pk3).",
+                    + "(base\\assets0.pk3 to assets2.pk3).",
                 [
                     "Select the Jedi Academy install folder itself, or its GameData subfolder.",
                     "On Steam: right-click Jedi Academy > Manage > Browse local files to find it.",
