@@ -27,6 +27,9 @@ namespace SWGLLauncher
     {
         private const string PartialSuffix = ".part";
 
+        /// <summary>Attente avant de retenter une ecriture refusee sur le disque.</summary>
+        private static readonly TimeSpan AccessDeniedRetryDelay = TimeSpan.FromSeconds(30);
+
         private readonly string _installRoot;
         private readonly string _statePath;
 
@@ -278,19 +281,31 @@ namespace SWGLLauncher
                         attempt <= DownloadRetries
                         && !cancellationToken.IsCancellationRequested
                         && (IsTransient(exception)
+                            || IsAccessDenied(exception)
                             || (reconnect && exception is FluentFTP.Exceptions.FtpAuthenticationException)))
                     {
                         // Coupure reseau : le fichier partiel est garde, on se reconnecte
                         // et le telechargement reprend a l'octet ou il s'est arrete.
-                        Log?.Invoke($"Download of {entry.Path} interrupted ({Innermost(exception).Message}), "
-                            + $"retrying {attempt}/{DownloadRetries}");
+                        // Un refus d'ecriture local (antivirus, indexation, jeu encore ouvert)
+                        // se retente de la meme facon, apres une attente plus longue.
+                        bool accessDenied = IsAccessDenied(exception);
+
+                        Log?.Invoke(accessDenied
+                            ? $"Write access to {entry.Path} denied ({Innermost(exception).Message}), "
+                                + $"retrying in {AccessDeniedRetryDelay.TotalSeconds:0}s {attempt}/{DownloadRetries}"
+                            : $"Download of {entry.Path} interrupted ({Innermost(exception).Message}), "
+                                + $"retrying {attempt}/{DownloadRetries}");
 
                         progress?.Report(new SyncProgress(
-                            $"Reconnecting ({attempt}/{DownloadRetries})",
+                            accessDenied
+                                ? $"File locked, retrying in {AccessDeniedRetryDelay.TotalSeconds:0}s ({attempt}/{DownloadRetries})"
+                                : $"Reconnecting ({attempt}/{DownloadRetries})",
                             entry.Path,
                             totalBytes > 0 ? fileStartBytes / (double)totalBytes : -1));
 
-                        await Task.Delay(TimeSpan.FromSeconds(2 * attempt), cancellationToken);
+                        await Task.Delay(
+                            accessDenied ? AccessDeniedRetryDelay : TimeSpan.FromSeconds(2 * attempt),
+                            cancellationToken);
                         reconnect = true;
                         resuming = true;
                     }
@@ -392,6 +407,28 @@ namespace SWGLLauncher
             }
 
             return transient;
+        }
+
+        /// <summary>
+        /// Vrai pour un refus d'acces au fichier local (fichier verrouille par un antivirus,
+        /// l'indexation ou le jeu), souvent leve le temps d'un scan : on attend puis on retente.
+        /// </summary>
+        private static bool IsAccessDenied(Exception exception)
+        {
+            for (Exception? current = exception; current is not null; current = current.InnerException)
+            {
+                if (current is OperationCanceledException)
+                {
+                    return false;
+                }
+
+                if (current is UnauthorizedAccessException)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static Exception Innermost(Exception exception)
